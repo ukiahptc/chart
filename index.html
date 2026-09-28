@@ -283,7 +283,10 @@
 (() => {
   const SYMBOL = 'BTCUSDT';
   const REST_HOSTS = ['https://fapi.binance.com'];
-  const WS_HOSTS = ['wss://fstream.binance.com'];
+  // 2026-04-23부터 kline·ticker·markPrice는 /market 경로로만 전송됨
+  const WS_HOSTS = ['wss://fstream.binance.com/market'];
+  const STALE_MS = 8000;   // 이 시간 동안 실시간 데이터가 없으면 REST 폴링으로 전환
+  const POLL_MS = 2000;
   const TF_LABEL = { '1m': '1분', '5m': '5분', '15m': '15분', '1h': '1시간', '4h': '4시간', '1d': '1일' };
   const LOOKBACK = 20;
   // lightweight-charts는 UTC로 그리므로 현지 시각이 보이도록 시간을 밀어 줌
@@ -311,6 +314,8 @@
   let reconnectDelay = 1000;
   let reconnectTimer = null;
   let loadSeq = 0;
+  let lastMsgAt = 0;
+  let pollTimer = null;
 
   // ---------- 차트 ----------
   const chart = LightweightCharts.createChart($('chart'), {
@@ -386,6 +391,7 @@
     document.querySelectorAll('.tf').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tf === tf)));
     $('tfNote').textContent = `봉 하나 = ${TF_LABEL[tf]}`;
     $('legend').textContent = '데이터 불러오는 중…';
+    lastMsgAt = Date.now();
     connectWs();
     try {
       const rows = await fetchJson(`/fapi/v1/klines?symbol=${SYMBOL}&interval=${tf}&limit=500`);
@@ -396,6 +402,7 @@
       // 처음엔 최근 120봉만 보여 줌 (나머지는 드래그로 확인)
       chart.timeScale().setVisibleLogicalRange({ from: candles.length - 120, to: candles.length + 2 });
       renderReadout();
+      poll(); // 실시간 데이터가 오기 전에 상단 시세부터 채움
     } catch (e) {
       if (seq !== loadSeq) return;
       $('legend').textContent = '과거 데이터를 불러오지 못함. 네트워크를 확인하고 새로고침하세요. (' + e.message + ')';
@@ -452,23 +459,62 @@
     const url = `${WS_HOSTS[wsHostIdx]}/stream?streams=${s}@kline_${tf}/${s}@ticker/${s}@markPrice@1s`;
     const sock = new WebSocket(url);
     ws = sock;
-    setStatus('wait', '연결 중…');
-    sock.onopen = () => { reconnectDelay = 1000; setStatus('live', '실시간 연결됨'); };
+    if (!pollTimer) setStatus('wait', '연결 중…');
+    sock.onopen = () => { reconnectDelay = 1000; };
     sock.onmessage = (ev) => {
       const msg = JSON.parse(ev.data);
       if (!msg.data) return;
+      // 연결만 열리고 데이터가 안 오는 경우가 있어, 실제 데이터를 받았을 때만 '연결됨'으로 표시
+      lastMsgAt = Date.now();
+      stopPolling();
+      setStatus('live', '실시간 연결됨');
       if (msg.data.e === 'kline') onKline(msg.data.k);
       else if (msg.data.e === '24hrTicker') onTicker(msg.data);
       else if (msg.data.e === 'markPriceUpdate') onMarkPrice(msg.data);
     };
     sock.onclose = () => {
       if (ws !== sock) return;
-      setStatus('wait', '재연결 중…');
+      if (!pollTimer) setStatus('wait', '재연결 중…');
       wsHostIdx = (wsHostIdx + 1) % WS_HOSTS.length;
       reconnectTimer = setTimeout(connectWs, reconnectDelay);
       reconnectDelay = Math.min(reconnectDelay * 2, 30000);
     };
   }
+
+  // ---------- 예비 경로: REST 폴링 ----------
+  async function poll() {
+    const reqTf = tf;
+    try {
+      const [ks, t, m] = await Promise.all([
+        fetchJson(`/fapi/v1/klines?symbol=${SYMBOL}&interval=${reqTf}&limit=2`),
+        fetchJson(`/fapi/v1/ticker/24hr?symbol=${SYMBOL}`),
+        fetchJson(`/fapi/v1/premiumIndex?symbol=${SYMBOL}`),
+      ]);
+      ks.forEach((r) => onKline({ t: r[0], i: reqTf, o: r[1], h: r[2], l: r[3], c: r[4], v: r[5], x: r[6] < Date.now() }));
+      onTicker({ c: t.lastPrice, P: t.priceChangePercent, p: t.priceChange, h: t.highPrice, l: t.lowPrice, q: t.quoteVolume });
+      onMarkPrice({ p: m.markPrice, r: m.lastFundingRate, T: m.nextFundingTime });
+    } catch (e) { /* 다음 주기에 다시 시도 */ }
+  }
+
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(poll, POLL_MS);
+    poll();
+    setStatus('wait', `실시간 연결 안 됨 · ${POLL_MS / 1000}초마다 갱신 중`);
+  }
+
+  function stopPolling() {
+    if (!pollTimer) return;
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  setInterval(() => {
+    if (!candles.length || Date.now() - lastMsgAt < STALE_MS) return;
+    startPolling();
+    // 열려 있지만 조용한 연결은 닫아서 재연결을 유도
+    if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+  }, 2000);
 
   document.addEventListener('visibilitychange', () => {
     // 휴대폰에서 화면을 껐다 켜면 끊긴 연결과 놓친 봉을 다시 받아옴
