@@ -19,6 +19,12 @@
     --up-soft: rgba(214, 58, 58, 0.35);
     --down-soft: rgba(47, 111, 219, 0.35);
     --chip: #eef1f6;
+    --ma5: #d69a00;
+    --ma10: #a340c9;
+    --ma30: #11897c;
+    --bb: #8a93a3;
+    --macd: #2f6fdb;
+    --signal: #e07a1f;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -34,6 +40,12 @@
       --up-soft: rgba(240, 96, 95, 0.35);
       --down-soft: rgba(91, 147, 245, 0.35);
       --chip: #222731;
+      --ma5: #f2c14e;
+      --ma10: #c77ee6;
+      --ma30: #3cc3b2;
+      --bb: #7f8898;
+      --macd: #6ea0f7;
+      --signal: #f39a4b;
     }
   }
   * { box-sizing: border-box; }
@@ -74,6 +86,25 @@
   #chart { height: 440px; width: 100%; }
   .legend { padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 13px; font-variant-numeric: tabular-nums; color: var(--muted); display: flex; flex-wrap: wrap; gap: 2px 14px; min-height: 38px; }
   .legend b { color: var(--text); font-weight: 600; }
+  .sub { border-top: 1px solid var(--line); }
+  .sub[hidden] { display: none; }
+  .sub-legend { padding: 4px 12px 0; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; display: flex; flex-wrap: wrap; gap: 2px 12px; }
+  .sub-legend b { font-weight: 600; }
+  .subchart { height: 120px; width: 100%; }
+  .swatch { display: inline-block; width: 10px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 4px; }
+
+  .pos-form { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: flex-end; margin-bottom: 10px; }
+  .pos-form label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 2px; }
+  .pos-form input, .pos-form select {
+    font: inherit; font-size: 15px; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; width: 130px;
+  }
+  .pos-form select { width: 80px; }
+  .levels { list-style: none; padding: 0; margin: 8px 0 0; font-size: 14px; font-variant-numeric: tabular-nums; }
+  .levels li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px dashed var(--line); }
+  .levels li.now { font-weight: 700; }
+  .levels li.entry { color: var(--accent); font-weight: 600; }
+  .levels .gap { color: var(--muted); font-size: 12px; }
   .hint { font-size: 12px; color: var(--muted); margin: 6px 2px 0; }
 
   h2 { font-size: 17px; margin: 28px 0 10px; }
@@ -102,7 +133,8 @@
 
   @media (max-width: 600px) {
     .price { font-size: 26px; }
-    #chart { height: 360px; }
+    #chart { height: 340px; }
+    .subchart { height: 100px; }
     .status { margin-left: 0; }
   }
 </style>
@@ -141,12 +173,44 @@
     <button class="tf" data-tf="1d">1일</button>
     <span class="tf-note" id="tfNote"></span>
   </div>
+  <div class="toolbar" role="group" aria-label="지표">
+    <span class="label">지표</span>
+    <button class="tf ind" data-ind="ma">MA 5·10·30</button>
+    <button class="tf ind" data-ind="bb">볼린저밴드</button>
+    <button class="tf ind" data-ind="rsi">RSI</button>
+    <button class="tf ind" data-ind="macd">MACD</button>
+  </div>
 
   <div class="chart-box">
     <div class="legend" id="legend">데이터 불러오는 중…</div>
     <div id="chart"></div>
+    <div class="sub" id="rsiBox">
+      <div class="sub-legend" id="rsiLegend">RSI(14)</div>
+      <div class="subchart" id="rsiChart"></div>
+    </div>
+    <div class="sub" id="macdBox">
+      <div class="sub-legend" id="macdLegend">MACD(12, 26, 9)</div>
+      <div class="subchart" id="macdChart"></div>
+    </div>
   </div>
   <p class="hint">PC: 마우스를 올리면 그 봉의 정보가 보임 · 휠로 확대/축소, 드래그로 이동<br>휴대폰: 봉을 길게 누르면 정보가 보임 · 두 손가락으로 확대/축소</p>
+
+  <h2>내 포지션</h2>
+  <div class="card">
+    <div class="pos-form">
+      <label>방향
+        <select id="posSide"><option value="long">롱</option><option value="short">숏</option></select>
+      </label>
+      <label>진입가 (USDT)
+        <input id="posEntry" type="number" inputmode="decimal" step="0.1" min="0" placeholder="예: 83255">
+      </label>
+      <label>레버리지 (선택)
+        <input id="posLev" type="number" inputmode="decimal" step="1" min="1" placeholder="예: 10">
+      </label>
+      <button class="tf" id="posClear" type="button">지우기</button>
+    </div>
+    <div id="posResult"><p class="why">진입가를 입력하면 차트에 진입선이 그려지고, 현재 손익과 주변 가격대를 보여줌. 입력값은 이 기기에만 저장됨.</p></div>
+  </div>
 
   <h2>지금 차트 읽기</h2>
   <div class="cards">
@@ -164,6 +228,24 @@
     </div>
     <div class="card" id="cardVolume">
       <h3>거래량</h3>
+      <div class="headline">—</div>
+      <p class="body"></p>
+      <p class="why"></p>
+    </div>
+    <div class="card" id="cardMA">
+      <h3>이동평균선 (MA 5·10·30)</h3>
+      <div class="headline">—</div>
+      <p class="body"></p>
+      <p class="why"></p>
+    </div>
+    <div class="card" id="cardRSI">
+      <h3>RSI (14)</h3>
+      <div class="headline">—</div>
+      <p class="body"></p>
+      <p class="why"></p>
+    </div>
+    <div class="card" id="cardMACD">
+      <h3>MACD (12, 26, 9)</h3>
       <div class="headline">—</div>
       <p class="body"></p>
       <p class="why"></p>
@@ -248,7 +330,61 @@
   </details>
 
   <details class="guide">
-    <summary>5. 선물 화면에서 추가로 볼 것</summary>
+    <summary>5. 이동평균선 (MA5 · MA10 · MA30)</summary>
+    <div class="guide-body">
+      <ul>
+        <li><b>뜻</b>: 최근 N개 봉의 종가 평균을 이은 선. <span class="chip">MA5</span> = 최근 5개 봉 평균, <span class="chip">MA30</span> = 최근 30개 봉 평균</li>
+        <li><b>봉 간격에 따라 의미가 바뀜</b>: 1시간봉의 MA5는 최근 5시간 평균, 1일봉의 MA5는 최근 5일 평균</li>
+        <li><b>짧은 선(MA5)</b>은 가격을 빠르게 따라가고, <b>긴 선(MA30)</b>은 천천히 움직이며 큰 흐름을 보여줌</li>
+        <li><b>가격이 선 위에 있음</b> → 최근 평균보다 비싸게 거래되는 중 → 상승 쪽 힘이 우세함. 선 아래면 반대</li>
+        <li><b>정배열</b>: 위에서부터 MA5 > MA10 > MA30 순서 → 상승 추세의 전형적인 모습. <b>역배열</b>: MA5 < MA10 < MA30 → 하락 추세</li>
+        <li><b>골든크로스</b>: 짧은 선이 긴 선을 아래에서 위로 뚫고 올라감 → 상승 전환 신호로 봄. <b>데드크로스</b>: 위에서 아래로 뚫고 내려감 → 하락 전환 신호로 봄</li>
+        <li><b>지지·저항 역할</b>: 가격이 내려오다 이평선 근처에서 반등하는 경우가 많아, 선 자체가 참고 가격대가 됨</li>
+        <li><b>한계</b>: 과거 평균이라 늘 한발 늦게 반응함(후행 지표). 횡보장에서는 교차가 자주 일어나 신호가 잘 맞지 않음</li>
+        <li>이 페이지 색: <span class="swatch" style="background:var(--ma5)"></span>MA5 · <span class="swatch" style="background:var(--ma10)"></span>MA10 · <span class="swatch" style="background:var(--ma30)"></span>MA30 (Batonex 앱의 선 색과 다를 수 있음)</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="guide">
+    <summary>6. 볼린저밴드</summary>
+    <div class="guide-body">
+      <ul>
+        <li><b>뜻</b>: 가운데 선(20봉 평균)과, 그 위아래로 "평소 흔들림 폭의 2배"만큼 떨어진 선 2개. 가격은 대부분 이 띠 안에서 움직임</li>
+        <li><b>띠가 좁아짐</b> → 변동성이 줄어든 상태. 이후 한쪽으로 크게 움직이는 경우가 많음(방향은 알려주지 않음)</li>
+        <li><b>가격이 상단에 붙음</b> → 강하게 오르는 중. 그 자체가 곧 떨어진다는 뜻은 아님. 강한 추세에서는 상단을 타고 계속 오르기도 함</li>
+        <li><b>가격이 하단에 붙음</b> → 강하게 내리는 중. 마찬가지로 곧 반등한다는 뜻은 아님</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="guide">
+    <summary>7. RSI (상대강도지수)</summary>
+    <div class="guide-body">
+      <ul>
+        <li><b>뜻</b>: 최근 14개 봉에서 오른 폭과 내린 폭을 비교해 0~100으로 나타낸 값. 50보다 크면 오른 힘이 더 컸다는 뜻</li>
+        <li><b>70 이상 = 과매수</b>: 짧은 기간에 많이 올랐음. 쉬어가거나 되돌림이 나올 수 있는 구간</li>
+        <li><b>30 이하 = 과매도</b>: 짧은 기간에 많이 내렸음. 반등이 나올 수 있는 구간</li>
+        <li><b>주의</b>: 강한 추세에서는 70 이상(또는 30 이하)에 오래 머물기도 함. "과매수니까 곧 떨어진다"로 단정하면 안 됨</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="guide">
+    <summary>8. MACD</summary>
+    <div class="guide-body">
+      <ul>
+        <li><b>MACD선</b>: 빠른 평균(12봉)과 느린 평균(26봉)의 차이. 0보다 크면 단기 평균이 장기 평균보다 높음 = 상승 쪽</li>
+        <li><b>시그널선</b>: MACD선을 다시 9봉 평균 낸 선. MACD선보다 느림</li>
+        <li><b>MACD선이 시그널선 위</b> → 상승 힘이 우세. 아래로 뚫고 내려가면 힘이 약해졌다는 신호로 봄</li>
+        <li><b>막대(히스토그램)</b>: 두 선의 차이. 막대가 커지면 그 방향 힘이 세지는 중, 작아지면 약해지는 중</li>
+        <li>이동평균을 바탕으로 해서 역시 한발 늦게 반응함</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="guide">
+    <summary>9. 선물 화면에서 추가로 볼 것</summary>
     <div class="guide-body">
       <ul>
         <li><b>최종 체결가</b>: 맨 위 큰 숫자이자 차트의 캔들. 실제로 마지막에 거래된 가격</li>
@@ -265,9 +401,11 @@
   </details>
 
   <details class="guide">
-    <summary>6. 주의할 점</summary>
+    <summary>10. 주의할 점</summary>
     <div class="guide-body">
       <ul>
+        <li>지표는 모두 과거 가격으로 계산한 값임. 여러 지표가 같은 방향을 가리켜도 틀릴 수 있음</li>
+        <li>레버리지 포지션은 작은 움직임에도 손익이 크게 변함. 어디까지 불리해지면 정리할지(손절 기준)를 미리 정해 두는 것이 일반적인 위험 관리 방법임</li>
         <li>차트는 지나간 가격의 기록임. 같은 모양이 나와도 다음 움직임은 매번 다를 수 있음</li>
         <li>한 가지 신호만 보고 판단하지 말고 봉 모양·흐름·거래량을 함께 볼 것</li>
         <li>코인 시장은 24시간 열려 있고 변동이 커서 짧은 간격일수록 해석이 자주 틀림</li>
@@ -318,15 +456,29 @@
   let pollTimer = null;
 
   // ---------- 차트 ----------
-  const chart = LightweightCharts.createChart($('chart'), {
-    autoSize: true,
+  const themeOptions = () => ({
     layout: { background: { color: 'transparent' }, textColor: cssVar('--muted'), fontSize: 12 },
     grid: { vertLines: { color: cssVar('--grid') }, horzLines: { color: cssVar('--grid') } },
-    rightPriceScale: { borderColor: cssVar('--line') },
-    timeScale: { borderColor: cssVar('--line'), timeVisible: true, secondsVisible: false },
-    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-    localization: { locale: 'ko-KR', priceFormatter: fmtPrice },
+    // 세 차트의 가로 위치가 어긋나지 않도록 가격축 폭을 고정
+    rightPriceScale: { borderColor: cssVar('--line'), minimumWidth: 84 },
+    timeScale: { borderColor: cssVar('--line') },
   });
+  const makeChart = (el, extra) => {
+    const base = themeOptions();
+    return LightweightCharts.createChart(el, {
+      ...base,
+      autoSize: true,
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+      localization: { locale: 'ko-KR', priceFormatter: fmtPrice },
+      ...extra,
+      timeScale: { ...base.timeScale, ...(extra && extra.timeScale) },
+    });
+  };
+  const chart = makeChart($('chart'), { timeScale: { timeVisible: true, secondsVisible: false } });
+  const subOpts = { timeScale: { visible: false }, handleScale: { axisPressedMouseMove: false } };
+  const rsiChart = makeChart($('rsiChart'), { ...subOpts, localization: { locale: 'ko-KR', priceFormatter: (v) => v.toFixed(0) } });
+  const macdChart = makeChart($('macdChart'), { ...subOpts, localization: { locale: 'ko-KR', priceFormatter: (v) => v.toFixed(0) } });
+  const allCharts = [chart, rsiChart, macdChart];
   const candleSeries = chart.addCandlestickSeries({
     upColor: cssVar('--up'), downColor: cssVar('--down'),
     wickUpColor: cssVar('--up'), wickDownColor: cssVar('--down'),
@@ -342,27 +494,169 @@
   chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
   candleSeries.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.25 } });
 
+  const lineOpts = (color, extra) => ({
+    color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...extra,
+  });
+  const ma5S = chart.addLineSeries(lineOpts(cssVar('--ma5')));
+  const ma10S = chart.addLineSeries(lineOpts(cssVar('--ma10')));
+  const ma30S = chart.addLineSeries(lineOpts(cssVar('--ma30')));
+  const bbUpS = chart.addLineSeries(lineOpts(cssVar('--bb')));
+  const bbMidS = chart.addLineSeries(lineOpts(cssVar('--bb'), { lineStyle: LightweightCharts.LineStyle.Dotted }));
+  const bbLowS = chart.addLineSeries(lineOpts(cssVar('--bb')));
+
+  const rsiS = rsiChart.addLineSeries(lineOpts(cssVar('--ma10'), { lastValueVisible: true, priceFormat: { type: 'price', precision: 1, minMove: 0.1 },
+    autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) }));
+  rsiS.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: 0.06 } });
+  const rsiLines = [70, 30].map((v) => rsiS.createPriceLine({ price: v, color: cssVar('--bb'), lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: '' }));
+  const histS = macdChart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false, priceFormat: { type: 'price', precision: 1, minMove: 0.1 } });
+  const macdS = macdChart.addLineSeries(lineOpts(cssVar('--macd'), { priceFormat: { type: 'price', precision: 1, minMove: 0.1 } }));
+  const sigS = macdChart.addLineSeries(lineOpts(cssVar('--signal'), { priceFormat: { type: 'price', precision: 1, minMove: 0.1 } }));
+
+  // 세 차트의 확대·이동을 함께 맞춤
+  let syncing = false;
+  allCharts.forEach((src) => src.timeScale().subscribeVisibleLogicalRangeChange((r) => {
+    if (syncing || !r) return;
+    syncing = true;
+    allCharts.forEach((c) => { if (c !== src) c.timeScale().setVisibleLogicalRange(r); });
+    syncing = false;
+  }));
+
   const volBar = (c) => ({ time: c.time, value: c.volume, color: c.close >= c.open ? cssVar('--up-soft') : cssVar('--down-soft') });
 
   function applyTheme() {
-    chart.applyOptions({
-      layout: { textColor: cssVar('--muted') },
-      grid: { vertLines: { color: cssVar('--grid') }, horzLines: { color: cssVar('--grid') } },
-      rightPriceScale: { borderColor: cssVar('--line') },
-      timeScale: { borderColor: cssVar('--line') },
-    });
+    allCharts.forEach((c) => c.applyOptions(themeOptions()));
     candleSeries.applyOptions({
       upColor: cssVar('--up'), downColor: cssVar('--down'),
       wickUpColor: cssVar('--up'), wickDownColor: cssVar('--down'),
     });
+    ma5S.applyOptions({ color: cssVar('--ma5') });
+    ma10S.applyOptions({ color: cssVar('--ma10') });
+    ma30S.applyOptions({ color: cssVar('--ma30') });
+    [bbUpS, bbMidS, bbLowS].forEach((x) => x.applyOptions({ color: cssVar('--bb') }));
+    rsiS.applyOptions({ color: cssVar('--ma10') });
+    rsiLines.forEach((l) => l.applyOptions({ color: cssVar('--bb') }));
+    macdS.applyOptions({ color: cssVar('--macd') });
+    sigS.applyOptions({ color: cssVar('--signal') });
     volumeSeries.setData(candles.map(volBar));
+    refreshIndicators(true);
+    renderPosition();
   }
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 
-  chart.subscribeCrosshairMove((param) => {
+  allCharts.forEach((c) => c.subscribeCrosshairMove((param) => {
     selectedTime = param.time ?? null;
     renderReadout();
-  });
+  }));
+
+  // ---------- 지표 계산 ----------
+  // 각 함수는 candles와 같은 길이의 배열을 돌려주며, 값을 낼 수 없는 앞부분은 null
+  function sma(vals, n) {
+    const out = new Array(vals.length).fill(null);
+    let sum = 0;
+    for (let i = 0; i < vals.length; i++) {
+      sum += vals[i];
+      if (i >= n) sum -= vals[i - n];
+      if (i >= n - 1) out[i] = sum / n;
+    }
+    return out;
+  }
+  function ema(vals, n) {
+    const out = new Array(vals.length).fill(null);
+    const k = 2 / (n + 1);
+    let start = vals.findIndex((v) => v != null);
+    if (start < 0 || vals.length - start < n) return out;
+    let prev = 0;
+    for (let i = start; i < start + n; i++) prev += vals[i];
+    prev /= n;
+    out[start + n - 1] = prev;
+    for (let i = start + n; i < vals.length; i++) { prev = vals[i] * k + prev * (1 - k); out[i] = prev; }
+    return out;
+  }
+  function bollinger(closes, n = 20, mult = 2) {
+    const mid = sma(closes, n);
+    const up = mid.map(() => null), low = mid.map(() => null);
+    for (let i = n - 1; i < closes.length; i++) {
+      let v = 0;
+      for (let j = i - n + 1; j <= i; j++) v += (closes[j] - mid[i]) ** 2;
+      const sd = Math.sqrt(v / n);
+      up[i] = mid[i] + mult * sd; low[i] = mid[i] - mult * sd;
+    }
+    return { up, mid, low };
+  }
+  function rsi(closes, n = 14) {
+    const out = new Array(closes.length).fill(null);
+    if (closes.length <= n) return out;
+    let gain = 0, loss = 0;
+    for (let i = 1; i <= n; i++) {
+      const d = closes[i] - closes[i - 1];
+      if (d > 0) gain += d; else loss -= d;
+    }
+    gain /= n; loss /= n;
+    out[n] = loss === 0 ? 100 : 100 - 100 / (1 + gain / loss);
+    for (let i = n + 1; i < closes.length; i++) {
+      const d = closes[i] - closes[i - 1];
+      gain = (gain * (n - 1) + Math.max(d, 0)) / n;   // 와일더 평활
+      loss = (loss * (n - 1) + Math.max(-d, 0)) / n;
+      out[i] = loss === 0 ? 100 : 100 - 100 / (1 + gain / loss);
+    }
+    return out;
+  }
+  function macd(closes, fast = 12, slow = 26, sig = 9) {
+    const f = ema(closes, fast), sl = ema(closes, slow);
+    const line = closes.map((_, i) => (f[i] == null || sl[i] == null ? null : f[i] - sl[i]));
+    const signal = ema(line, sig);
+    const hist = line.map((v, i) => (v == null || signal[i] == null ? null : v - signal[i]));
+    return { line, signal, hist };
+  }
+
+  let ind = null; // 마지막으로 계산한 지표 값
+
+  function refreshIndicators(full) {
+    if (!candles.length) return;
+    const closes = candles.map((c) => c.close);
+    const bb = bollinger(closes);
+    const m = macd(closes);
+    ind = { ma5: sma(closes, 5), ma10: sma(closes, 10), ma30: sma(closes, 30), bb, rsi: rsi(closes), macd: m };
+    const histPoint = (v, i) => ({
+      time: candles[i].time, value: v,
+      color: v >= 0 ? cssVar('--up-soft') : cssVar('--down-soft'),
+    });
+    const pairs = [
+      [ma5S, ind.ma5], [ma10S, ind.ma10], [ma30S, ind.ma30],
+      [bbUpS, bb.up], [bbMidS, bb.mid], [bbLowS, bb.low],
+      [rsiS, ind.rsi], [macdS, m.line], [sigS, m.signal],
+    ];
+    const i = candles.length - 1;
+    if (full) {
+      // 값이 없는 앞부분도 시간만 있는 빈 점으로 채워야 세 차트의 봉 위치가 맞음
+      const toLine = (arr) => arr.map((v, j) => (v == null ? { time: candles[j].time } : { time: candles[j].time, value: v }));
+      pairs.forEach(([series, arr]) => series.setData(toLine(arr)));
+      histS.setData(m.hist.map((v, j) => (v == null ? { time: candles[j].time } : histPoint(v, j))));
+    } else {
+      pairs.forEach(([series, arr]) => { if (arr[i] != null) series.update({ time: candles[i].time, value: arr[i] }); });
+      if (m.hist[i] != null) histS.update(histPoint(m.hist[i], i));
+    }
+  }
+
+  // ---------- 지표 켜고 끄기 ----------
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* 저장 불가 환경은 무시 */ } },
+  };
+  const shown = store.get('chart.indicators', { ma: true, bb: false, rsi: true, macd: true });
+  function applyToggles() {
+    [ma5S, ma10S, ma30S].forEach((x) => x.applyOptions({ visible: shown.ma }));
+    [bbUpS, bbMidS, bbLowS].forEach((x) => x.applyOptions({ visible: shown.bb }));
+    $('rsiBox').hidden = !shown.rsi;
+    $('macdBox').hidden = !shown.macd;
+    document.querySelectorAll('.ind').forEach((b) => b.setAttribute('aria-pressed', String(!!shown[b.dataset.ind])));
+  }
+  document.querySelectorAll('.ind').forEach((b) => b.addEventListener('click', () => {
+    shown[b.dataset.ind] = !shown[b.dataset.ind];
+    store.set('chart.indicators', shown);
+    applyToggles();
+  }));
+  applyToggles();
 
   // ---------- 데이터 ----------
   async function fetchJson(path) {
@@ -388,7 +682,7 @@
     tf = newTf;
     selectedTime = null;
     candles = [];
-    document.querySelectorAll('.tf').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tf === tf)));
+    document.querySelectorAll('[data-tf]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tf === tf)));
     $('tfNote').textContent = `봉 하나 = ${TF_LABEL[tf]}`;
     $('legend').textContent = '데이터 불러오는 중…';
     lastMsgAt = Date.now();
@@ -399,6 +693,7 @@
       candles = rows.map(toCandle);
       candleSeries.setData(candles);
       volumeSeries.setData(candles.map(volBar));
+      refreshIndicators(true);
       // 처음엔 최근 120봉만 보여 줌 (나머지는 드래그로 확인)
       chart.timeScale().setVisibleLogicalRange({ from: candles.length - 120, to: candles.length + 2 });
       renderReadout();
@@ -422,6 +717,7 @@
     else return;
     candleSeries.update(c);
     volumeSeries.update(volBar(c));
+    refreshIndicators(false);
     renderReadout();
   }
 
@@ -605,6 +901,130 @@
     };
   }
 
+  function crossWithin(a, b, i, bars) {
+    // a가 b를 최근 bars개 봉 안에서 위/아래로 돌파했는지. ago=0이면 현재 봉
+    for (let j = i; j > i - bars && j > 0; j--) {
+      if ([a[j], b[j], a[j - 1], b[j - 1]].some((v) => v == null)) break;
+      const now = a[j] - b[j], before = a[j - 1] - b[j - 1];
+      if (before <= 0 && now > 0) return { up: true, ago: i - j };
+      if (before >= 0 && now < 0) return { up: false, ago: i - j };
+    }
+    return null;
+  }
+  const agoText = (n) => (n === 0 ? '현재 봉에서' : `${n}봉 전에`);
+
+  function describeMA() {
+    const i = candles.length - 1;
+    const a = ind.ma5[i], b = ind.ma10[i], c = ind.ma30[i];
+    if (c == null) return null;
+    const price = candles[i].close;
+    const above = [a, b, c].filter((v) => price > v).length;
+    let headline, cls, body;
+    if (a > b && b > c) { headline = '정배열'; cls = 'up'; body = 'MA5 > MA10 > MA30 순서. 상승 추세의 전형적인 모습.'; }
+    else if (a < b && b < c) { headline = '역배열'; cls = 'down'; body = 'MA5 < MA10 < MA30 순서. 하락 추세의 전형적인 모습.'; }
+    else { headline = '혼조 (선이 얽힘)'; cls = ''; body = '세 선의 순서가 섞여 있음. 추세가 바뀌는 중이거나 횡보 중.'; }
+    body += ` 현재가는 세 선 중 ${above}개보다 위에 있음.`;
+    const x = crossWithin(ind.ma5, ind.ma10, i, 5);
+    if (x) body += ` ${agoText(x.ago)} ${x.up ? '골든크로스(MA5가 MA10을 위로 돌파)' : '데드크로스(MA5가 MA10을 아래로 돌파)'} 발생.`;
+    return { headline, cls, body, why: `MA5 ${fmtPrice(a)} · MA10 ${fmtPrice(b)} · MA30 ${fmtPrice(c)} (${TF_LABEL[tf]}봉 기준)` };
+  }
+
+  function describeRSI() {
+    const i = candles.length - 1;
+    const v = ind.rsi[i], prev = ind.rsi[i - 1];
+    if (v == null) return null;
+    let headline, cls, body;
+    if (v >= 70) { headline = `${v.toFixed(1)} · 과매수 구간`; cls = 'up'; body = '짧은 기간에 많이 올랐음. 쉬어가거나 되돌림이 나올 수 있는 구간. 강한 상승장에서는 여기 오래 머물기도 함.'; }
+    else if (v <= 30) { headline = `${v.toFixed(1)} · 과매도 구간`; cls = 'down'; body = '짧은 기간에 많이 내렸음. 반등이 나올 수 있는 구간. 강한 하락장에서는 여기 오래 머물기도 함.'; }
+    else if (v >= 50) { headline = `${v.toFixed(1)} · 상승 힘 우세`; cls = 'up'; body = '최근 14봉 동안 오른 폭이 내린 폭보다 컸음.'; }
+    else { headline = `${v.toFixed(1)} · 하락 힘 우세`; cls = 'down'; body = '최근 14봉 동안 내린 폭이 오른 폭보다 컸음.'; }
+    const dir = prev == null ? '' : v > prev ? '직전 봉보다 올라가는 중' : '직전 봉보다 내려가는 중';
+    return { headline, cls, body, why: `기준: 70 이상 과매수 · 30 이하 과매도 · 50이 중간${dir ? ' · ' + dir : ''}` };
+  }
+
+  function describeMACD() {
+    const i = candles.length - 1;
+    const { line, signal, hist } = ind.macd;
+    if (hist[i] == null || hist[i - 1] == null) return null;
+    const bull = line[i] > signal[i];
+    const growing = Math.abs(hist[i]) > Math.abs(hist[i - 1]);
+    let body = bull
+      ? `MACD선이 시그널선 위에 있음. 상승 힘이 ${growing ? '세지는' : '약해지는'} 중(막대가 ${growing ? '커짐' : '작아짐'}).`
+      : `MACD선이 시그널선 아래에 있음. 하락 힘이 ${growing ? '세지는' : '약해지는'} 중(막대가 ${growing ? '커짐' : '작아짐'}).`;
+    body += line[i] >= 0 ? ' 0선 위(단기 평균 > 장기 평균).' : ' 0선 아래(단기 평균 < 장기 평균).';
+    const x = crossWithin(line, signal, i, 3);
+    if (x) body += ` ${agoText(x.ago)} MACD선이 시그널선을 ${x.up ? '위로' : '아래로'} 돌파함.`;
+    return {
+      headline: bull ? '상승 쪽 우세' : '하락 쪽 우세', cls: bull ? 'up' : 'down', body,
+      why: `MACD ${line[i].toFixed(1)} · 시그널 ${signal[i].toFixed(1)} · 막대 ${hist[i].toFixed(1)}`,
+    };
+  }
+
+  // ---------- 내 포지션 ----------
+  const pos = store.get('chart.position', { side: 'long', entry: null, lev: null });
+  let entryLine = null;
+  $('posSide').value = pos.side;
+  if (pos.entry) $('posEntry').value = pos.entry;
+  if (pos.lev) $('posLev').value = pos.lev;
+  const posDefault = $('posResult').innerHTML;
+
+  function onPosInput() {
+    const entry = parseFloat($('posEntry').value), lev = parseFloat($('posLev').value);
+    pos.side = $('posSide').value;
+    pos.entry = entry > 0 ? entry : null;
+    pos.lev = lev >= 1 ? lev : null;
+    store.set('chart.position', pos);
+    renderPosition();
+  }
+  ['posSide', 'posEntry', 'posLev'].forEach((id) => $(id).addEventListener('input', onPosInput));
+  $('posClear').addEventListener('click', () => { $('posEntry').value = ''; $('posLev').value = ''; onPosInput(); });
+
+  function renderPosition() {
+    if (entryLine) { candleSeries.removePriceLine(entryLine); entryLine = null; }
+    if (!pos.entry) { $('posResult').innerHTML = posDefault; return; }
+    entryLine = candleSeries.createPriceLine({
+      price: pos.entry, color: cssVar('--accent'), lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true,
+      title: `진입 ${pos.side === 'long' ? '롱' : '숏'}`,
+    });
+    updatePositionStats();
+  }
+
+  function updatePositionStats() {
+    if (!pos.entry || !candles.length || !ind) return;
+    const i = candles.length - 1;
+    const price = candles[i].close;
+    const dir = pos.side === 'long' ? 1 : -1;
+    const pnl = (price - pos.entry) / pos.entry * 100 * dir;
+    const diff = price - pos.entry;
+    const cls = pnl >= 0 ? 'up' : 'down';
+    let head = `<span class="${cls}">${fmtPct(pnl)} · ${pnl >= 0 ? '수익' : '손실'} 구간</span>`;
+    if (pos.lev) head += ` <span class="${cls}" style="font-size:14px">(레버리지 ${fmtNum(pos.lev, 0)}배 기준 약 ${fmtPct(pnl * pos.lev)})</span>`;
+
+    const closed = candles.filter((x) => x.closed).slice(-LOOKBACK);
+    const levels = [
+      { label: '현재가', v: price, cls: 'now' },
+      { label: `진입가 (${pos.side === 'long' ? '롱' : '숏'})`, v: pos.entry, cls: 'entry' },
+      { label: 'MA5', v: ind.ma5[i] }, { label: 'MA10', v: ind.ma10[i] }, { label: 'MA30', v: ind.ma30[i] },
+      { label: '볼린저 상단', v: ind.bb.up[i] }, { label: '볼린저 하단', v: ind.bb.low[i] },
+    ];
+    if (closed.length) {
+      levels.push({ label: `최근 ${closed.length}봉 고점`, v: Math.max(...closed.map((x) => x.high)) });
+      levels.push({ label: `최근 ${closed.length}봉 저점`, v: Math.min(...closed.map((x) => x.low)) });
+    }
+    const rows = levels.filter((l) => l.v != null).sort((a, b) => b.v - a.v).map((l) => {
+      const gap = l.cls === 'now' ? '' : `<span class="gap">현재가 대비 ${fmtPct((l.v - price) / price * 100)}</span>`;
+      return `<li class="${l.cls || ''}"><span>${l.label}</span><span>${fmtPrice(l.v)} ${gap}</span></li>`;
+    }).join('');
+
+    $('posResult').innerHTML =
+      `<div class="headline" style="font-size:17px;font-weight:700">${head}</div>` +
+      `<p>현재가 ${fmtPrice(price)}는 진입가보다 <b>${fmtPrice(Math.abs(diff))}</b> ${diff >= 0 ? '높음' : '낮음'}.</p>` +
+      `<ul class="levels">${rows}</ul>` +
+      `<p class="why">가격 순으로 정렬한 참고 가격대 (${TF_LABEL[tf]}봉 기준). 현재가 아래의 선·저점은 떨어질 때 멈추거나 반등하는 기준이 되기 쉬운 가격대(지지 후보), 위쪽은 오를 때 막히기 쉬운 가격대(저항 후보)임.</p>` +
+      `<p class="why">바이낸스 선물 가격으로 계산했고 수수료·펀딩비는 뺀 값임. Batonex 앱의 손익·청산가와 다를 수 있으니 실제 값은 앱에서 확인할 것.</p>`;
+  }
+
   function fillCard(id, d, emptyText) {
     const el = $(id);
     const h = el.querySelector('.headline');
@@ -631,6 +1051,24 @@
       `<span class="${chg >= 0 ? 'up' : 'down'}">${fmtPct(chg)}</span>` +
       `<span>거래량 <b>${fmtNum(c.volume, 3)}</b> BTC</span>`;
 
+    const idx = candles.indexOf(c);
+    const v = (arr) => (ind && arr[idx] != null ? arr[idx] : null);
+    if (ind && shown.ma) {
+      $('legend').innerHTML += [['MA5', '--ma5', ind.ma5], ['MA10', '--ma10', ind.ma10], ['MA30', '--ma30', ind.ma30]]
+        .map(([n, col, arr]) => `<span><span class="swatch" style="background:var(${col})"></span>${n} <b>${v(arr) == null ? '—' : fmtPrice(v(arr))}</b></span>`).join('');
+    }
+    if (ind) {
+      const r = v(ind.rsi);
+      $('rsiLegend').innerHTML = `<span>RSI(14) <b>${r == null ? '—' : r.toFixed(1)}</b></span><span>70 이상 과매수 · 30 이하 과매도</span>`;
+      const [ml, sg, hs] = [v(ind.macd.line), v(ind.macd.signal), v(ind.macd.hist)];
+      const f = (x) => (x == null ? '—' : x.toFixed(1));
+      $('macdLegend').innerHTML =
+        `<span>MACD(12, 26, 9)</span>` +
+        `<span><span class="swatch" style="background:var(--macd)"></span>MACD <b>${f(ml)}</b></span>` +
+        `<span><span class="swatch" style="background:var(--signal)"></span>시그널 <b>${f(sg)}</b></span>` +
+        `<span>막대 <b class="${hs >= 0 ? 'up' : 'down'}">${f(hs)}</b></span>`;
+    }
+
     const cd = describeCandle(c);
     const note = isLatest && !c.closed ? ' 아직 진행 중인 봉이라 모양이 계속 바뀜.' : '';
     fillCard('cardCandle', { ...cd, body: cd.body + note }, '—');
@@ -639,11 +1077,17 @@
     const closed = candles.filter((x) => x.closed);
     fillCard('cardTrend', describeTrend(closed), '데이터 부족');
     fillCard('cardVolume', describeVolume(closed), '데이터 부족');
+    if (ind) {
+      fillCard('cardMA', describeMA(), '데이터 부족');
+      fillCard('cardRSI', describeRSI(), '데이터 부족');
+      fillCard('cardMACD', describeMACD(), '데이터 부족');
+    }
+    updatePositionStats();
   }
 
   // ---------- 시작 ----------
-  document.querySelectorAll('.tf').forEach((b) => b.addEventListener('click', () => { if (b.dataset.tf !== tf) load(b.dataset.tf); }));
-  load(tf);
+  document.querySelectorAll('[data-tf]').forEach((b) => b.addEventListener('click', () => { if (b.dataset.tf !== tf) load(b.dataset.tf); }));
+  load(tf).then(renderPosition);
 })();
 </script>
 </body>
