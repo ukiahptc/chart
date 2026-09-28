@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BTC/USDT 실시간 차트</title>
+<meta name="description" content="바이낸스 BTCUSDT 실시간 캔들 차트와 초보자용 차트 읽기 안내">
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --text: #16181d;
+    --muted: #5f6673;
+    --line: #e3e6eb;
+    --grid: #eef0f3;
+    --accent: #3a5bd9;
+    --up: #d63a3a;      /* 상승: 국내 관례대로 빨강 */
+    --down: #2f6fdb;    /* 하락: 파랑 */
+    --up-soft: rgba(214, 58, 58, 0.35);
+    --down-soft: rgba(47, 111, 219, 0.35);
+    --chip: #eef1f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1115;
+      --panel: #171a20;
+      --text: #e8eaee;
+      --muted: #9aa2b1;
+      --line: #262b34;
+      --grid: #1e222a;
+      --accent: #7d97ff;
+      --up: #f0605f;
+      --down: #5b93f5;
+      --up-soft: rgba(240, 96, 95, 0.35);
+      --down-soft: rgba(91, 147, 245, 0.35);
+      --chip: #222731;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
+
+  header.top { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 24px; margin-bottom: 12px; }
+  .pair { font-weight: 700; font-size: 18px; }
+  .pair small { font-weight: 400; color: var(--muted); font-size: 13px; margin-left: 6px; }
+  .price { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .change { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stats { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .stats b { color: var(--text); font-weight: 600; }
+  .status { margin-left: auto; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.live { background: #2fa36b; }
+  .dot.wait { background: #e0a526; }
+  .up { color: var(--up); }
+  .down { color: var(--down); }
+
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
+  .toolbar .label { font-size: 13px; color: var(--muted); margin-right: 4px; }
+  .tf {
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    border-radius: 6px; padding: 4px 10px; font-size: 13px; cursor: pointer;
+  }
+  .tf[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .tf-note { font-size: 13px; color: var(--muted); margin-left: 4px; }
+
+  .chart-box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  #chart { height: 440px; width: 100%; }
+  .legend { padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 13px; font-variant-numeric: tabular-nums; color: var(--muted); display: flex; flex-wrap: wrap; gap: 2px 14px; min-height: 38px; }
+  .legend b { color: var(--text); font-weight: 600; }
+  .hint { font-size: 12px; color: var(--muted); margin: 6px 2px 0; }
+
+  h2 { font-size: 17px; margin: 28px 0 10px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .card h3 { font-size: 14px; margin: 0 0 6px; color: var(--muted); font-weight: 600; }
+  .card .headline { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+  .card p { margin: 4px 0; }
+  .card .why { font-size: 13px; color: var(--muted); }
+  .disclaimer { font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+  details.guide { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; }
+  details.guide summary { cursor: pointer; padding: 12px 16px; font-weight: 600; list-style: none; }
+  details.guide summary::-webkit-details-marker { display: none; }
+  details.guide summary::before { content: "▸ "; color: var(--muted); }
+  details.guide[open] summary::before { content: "▾ "; }
+  .guide-body { padding: 0 16px 14px; }
+  .guide-body ul { padding-left: 20px; margin: 6px 0; }
+  .guide-body li { margin: 3px 0; }
+  .anatomy { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+  .anatomy svg { flex: 0 0 auto; max-width: 100%; height: auto; }
+  .anatomy svg text { fill: var(--muted); font-size: 12px; }
+  .chip { display: inline-block; background: var(--chip); border-radius: 4px; padding: 0 6px; font-size: 13px; }
+
+  footer { margin: 28px 0 8px; font-size: 12px; color: var(--muted); }
+
+  @media (max-width: 600px) {
+    .price { font-size: 26px; }
+    #chart { height: 360px; }
+    .status { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <div class="pair">BTC / USDT <small>바이낸스 현물</small></div>
+      <div class="price" id="price">—</div>
+    </div>
+    <div>
+      <div class="change" id="change">—</div>
+      <div class="stats">
+        <span>24시간 고가 <b id="high24">—</b></span>
+        <span>저가 <b id="low24">—</b></span>
+        <span>거래대금 <b id="vol24">—</b></span>
+      </div>
+    </div>
+    <div class="status"><span class="dot" id="dot"></span><span id="statusText">연결 중…</span></div>
+  </header>
+
+  <div class="toolbar" role="group" aria-label="봉 간격">
+    <span class="label">봉 간격</span>
+    <button class="tf" data-tf="1m">1분</button>
+    <button class="tf" data-tf="5m">5분</button>
+    <button class="tf" data-tf="15m">15분</button>
+    <button class="tf" data-tf="1h">1시간</button>
+    <button class="tf" data-tf="4h">4시간</button>
+    <button class="tf" data-tf="1d">1일</button>
+    <span class="tf-note" id="tfNote"></span>
+  </div>
+
+  <div class="chart-box">
+    <div class="legend" id="legend">데이터 불러오는 중…</div>
+    <div id="chart"></div>
+  </div>
+  <p class="hint">PC: 마우스를 올리면 그 봉의 정보가 보임 · 휠로 확대/축소, 드래그로 이동<br>휴대폰: 봉을 길게 누르면 정보가 보임 · 두 손가락으로 확대/축소</p>
+
+  <h2>지금 차트 읽기</h2>
+  <div class="cards">
+    <div class="card" id="cardCandle">
+      <h3>선택한 봉</h3>
+      <div class="headline">—</div>
+      <p class="body"></p>
+      <p class="why"></p>
+    </div>
+    <div class="card" id="cardTrend">
+      <h3>최근 20봉 흐름</h3>
+      <div class="headline">—</div>
+      <p class="body"></p>
+      <p class="why"></p>
+    </div>
+    <div class="card" id="cardVolume">
+      <h3>거래량</h3>
+      <div class="headline">—</div>
+      <p class="body"></p>
+      <p class="why"></p>
+    </div>
+  </div>
+  <p class="disclaimer">규칙에 따라 자동으로 만든 해석임. 차트의 현재 상태를 설명할 뿐 가격을 예측하거나 매수·매도를 권하지 않음.</p>
+
+  <h2>차트 보는 법</h2>
+
+  <details class="guide" open>
+    <summary>1. 캔들(봉) 하나 읽기</summary>
+    <div class="guide-body">
+      <div class="anatomy">
+        <svg width="300" height="190" viewBox="0 0 300 190" aria-label="양봉과 음봉 구조">
+          <!-- 양봉 -->
+          <line x1="70" y1="15" x2="70" y2="175" stroke="var(--up)" stroke-width="2"/>
+          <rect x="50" y="45" width="40" height="90" fill="var(--up)"/>
+          <text x="75" y="12">고가</text>
+          <text x="95" y="49">종가</text>
+          <text x="95" y="138">시가</text>
+          <text x="75" y="186">저가</text>
+          <text x="40" y="100" text-anchor="end">몸통</text>
+          <text x="62" y="32" text-anchor="end">윗꼬리</text>
+          <text x="62" y="162" text-anchor="end">아랫꼬리</text>
+          <!-- 음봉 -->
+          <line x1="220" y1="15" x2="220" y2="175" stroke="var(--down)" stroke-width="2"/>
+          <rect x="200" y="45" width="40" height="90" fill="var(--down)"/>
+          <text x="225" y="12">고가</text>
+          <text x="245" y="49">시가</text>
+          <text x="245" y="138">종가</text>
+          <text x="225" y="186">저가</text>
+        </svg>
+        <div>
+          <p><b class="up">양봉(빨강)</b>: 끝난 가격(종가)이 시작 가격(시가)보다 높음 → 그 시간 동안 <b>올랐음</b></p>
+          <p><b class="down">음봉(파랑)</b>: 종가가 시가보다 낮음 → 그 시간 동안 <b>내렸음</b></p>
+          <p class="why">바이낸스 앱은 반대로 상승=초록, 하락=빨강을 씀. 이 페이지는 업비트·국내 증권사처럼 상승=빨강으로 표시함.</p>
+        </div>
+      </div>
+      <ul>
+        <li><b>몸통</b>: 시가와 종가 사이. 길수록 한 방향으로 강하게 움직였다는 뜻</li>
+        <li><b>윗꼬리</b>: 한때 고가까지 올랐다가 밀려 내려온 구간. 길면 "위에서 팔려는 힘"이 강했음</li>
+        <li><b>아랫꼬리</b>: 한때 저가까지 떨어졌다가 다시 올라온 구간. 길면 "아래에서 사려는 힘"이 강했음</li>
+        <li><b>몸통이 거의 없는 봉(도지)</b>: 시가와 종가가 비슷함. 사는 힘과 파는 힘이 팽팽했다는 뜻</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="guide">
+    <summary>2. 봉 간격(타임프레임)</summary>
+    <div class="guide-body">
+      <ul>
+        <li>봉 하나가 몇 분(시간) 동안의 가격을 담는지 정하는 것. <span class="chip">1시간</span>이면 봉 하나 = 1시간 동안의 시가·고가·저가·종가</li>
+        <li><b>짧은 간격(1분·5분)</b>: 움직임이 세밀하게 보이지만 잡음(의미 없는 출렁임)이 많음</li>
+        <li><b>긴 간격(4시간·1일)</b>: 큰 흐름이 잘 보임. 처음 볼 때는 <b>1일 → 4시간 → 1시간</b> 순으로 크게 보고 좁혀가는 것을 권함</li>
+        <li>맨 오른쪽 봉은 <b>아직 진행 중</b>이라 계속 모양이 바뀜. 해석은 확정된 봉 위주로 하는 것이 안전함</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="guide">
+    <summary>3. 거래량</summary>
+    <div class="guide-body">
+      <ul>
+        <li>차트 아래쪽 막대. 그 봉 시간 동안 거래된 BTC 수량</li>
+        <li>막대 색은 같은 자리 봉의 색을 따름(양봉이면 빨강, 음봉이면 파랑)</li>
+        <li><b>가격이 크게 움직였는데 거래량도 많음</b> → 많은 사람이 참여한 움직임이라 의미가 큼</li>
+        <li><b>가격이 움직였는데 거래량이 적음</b> → 참여자가 적어 쉽게 되돌려질 수 있음</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="guide">
+    <summary>4. 추세(흐름) 파악</summary>
+    <div class="guide-body">
+      <ul>
+        <li><b>상승 흐름</b>: 고점(꼭대기)과 저점(바닥)이 모두 점점 높아짐</li>
+        <li><b>하락 흐름</b>: 고점과 저점이 모두 점점 낮아짐</li>
+        <li><b>횡보</b>: 고점·저점이 일정한 범위 안에서 오르내림</li>
+        <li>여러 번 반등한 가격대는 <b>지지선</b>, 여러 번 막힌 가격대는 <b>저항선</b>이라고 부름</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="guide">
+    <summary>5. 주의할 점</summary>
+    <div class="guide-body">
+      <ul>
+        <li>차트는 지나간 가격의 기록임. 같은 모양이 나와도 다음 움직임은 매번 다를 수 있음</li>
+        <li>한 가지 신호만 보고 판단하지 말고 봉 모양·흐름·거래량을 함께 볼 것</li>
+        <li>코인 시장은 24시간 열려 있고 변동이 커서 짧은 간격일수록 해석이 자주 틀림</li>
+      </ul>
+    </div>
+  </details>
+
+  <footer>데이터: 바이낸스 공개 API (실시간 WebSocket) · 시간은 이 기기의 현지 시각으로 표시</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+(() => {
+  const SYMBOL = 'BTCUSDT';
+  const REST_HOSTS = ['https://api.binance.com', 'https://data-api.binance.vision'];
+  const WS_HOSTS = ['wss://stream.binance.com:9443', 'wss://data-stream.binance.vision'];
+  const TF_LABEL = { '1m': '1분', '5m': '5분', '15m': '15분', '1h': '1시간', '4h': '4시간', '1d': '1일' };
+  const LOOKBACK = 20;
+  // lightweight-charts는 UTC로 그리므로 현지 시각이 보이도록 시간을 밀어 줌
+  const TZ_SHIFT = -new Date().getTimezoneOffset() * 60;
+
+  const $ = (id) => document.getElementById(id);
+  const fmtPrice = (v) => Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtNum = (v, d = 2) => Number(v).toLocaleString('en-US', { maximumFractionDigits: d });
+  const fmtPct = (v) => (v > 0 ? '+' : '') + v.toFixed(2) + '%';
+  const fmtBig = (v) => v >= 1e9 ? (v / 1e9).toFixed(2) + 'B' : v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : fmtNum(v, 0);
+  const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const fmtTime = (t, tf) => {
+    const d = new Date((t - TZ_SHIFT) * 1000);
+    const p = (n) => String(n).padStart(2, '0');
+    const date = `${d.getMonth() + 1}/${d.getDate()}`;
+    return tf === '1d' ? date : `${date} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+
+  // ---------- 상태 ----------
+  let tf = '1m';
+  let candles = [];       // {time, open, high, low, close, volume, closed}
+  let selectedTime = null; // 십자선으로 고른 봉 (없으면 최신 봉)
+  let ws = null;
+  let wsHostIdx = 0;
+  let reconnectDelay = 1000;
+  let reconnectTimer = null;
+  let loadSeq = 0;
+
+  // ---------- 차트 ----------
+  const chart = LightweightCharts.createChart($('chart'), {
+    autoSize: true,
+    layout: { background: { color: 'transparent' }, textColor: cssVar('--muted'), fontSize: 12 },
+    grid: { vertLines: { color: cssVar('--grid') }, horzLines: { color: cssVar('--grid') } },
+    rightPriceScale: { borderColor: cssVar('--line') },
+    timeScale: { borderColor: cssVar('--line'), timeVisible: true, secondsVisible: false },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    localization: { locale: 'ko-KR', priceFormatter: fmtPrice },
+  });
+  const candleSeries = chart.addCandlestickSeries({
+    upColor: cssVar('--up'), downColor: cssVar('--down'),
+    wickUpColor: cssVar('--up'), wickDownColor: cssVar('--down'),
+    borderVisible: false,
+    priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+  });
+  const volumeSeries = chart.addHistogramSeries({
+    priceScaleId: 'vol',
+    priceFormat: { type: 'volume' },
+    lastValueVisible: false,
+    priceLineVisible: false,
+  });
+  chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+  candleSeries.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.25 } });
+
+  const volBar = (c) => ({ time: c.time, value: c.volume, color: c.close >= c.open ? cssVar('--up-soft') : cssVar('--down-soft') });
+
+  function applyTheme() {
+    chart.applyOptions({
+      layout: { textColor: cssVar('--muted') },
+      grid: { vertLines: { color: cssVar('--grid') }, horzLines: { color: cssVar('--grid') } },
+      rightPriceScale: { borderColor: cssVar('--line') },
+      timeScale: { borderColor: cssVar('--line') },
+    });
+    candleSeries.applyOptions({
+      upColor: cssVar('--up'), downColor: cssVar('--down'),
+      wickUpColor: cssVar('--up'), wickDownColor: cssVar('--down'),
+    });
+    volumeSeries.setData(candles.map(volBar));
+  }
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+
+  chart.subscribeCrosshairMove((param) => {
+    selectedTime = param.time ?? null;
+    renderReadout();
+  });
+
+  // ---------- 데이터 ----------
+  async function fetchJson(path) {
+    let lastErr;
+    for (const host of REST_HOSTS) {
+      try {
+        const res = await fetch(host + path);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return await res.json();
+      } catch (e) { lastErr = e; }
+    }
+    throw lastErr;
+  }
+
+  const toCandle = (k) => ({
+    time: Math.floor(k[0] / 1000) + TZ_SHIFT,
+    open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5],
+    closed: k[6] < Date.now(),
+  });
+
+  async function load(newTf) {
+    const seq = ++loadSeq;
+    tf = newTf;
+    selectedTime = null;
+    candles = [];
+    document.querySelectorAll('.tf').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tf === tf)));
+    $('tfNote').textContent = `봉 하나 = ${TF_LABEL[tf]}`;
+    $('legend').textContent = '데이터 불러오는 중…';
+    connectWs();
+    try {
+      const rows = await fetchJson(`/api/v3/klines?symbol=${SYMBOL}&interval=${tf}&limit=500`);
+      if (seq !== loadSeq) return;
+      candles = rows.map(toCandle);
+      candleSeries.setData(candles);
+      volumeSeries.setData(candles.map(volBar));
+      // 처음엔 최근 120봉만 보여 줌 (나머지는 드래그로 확인)
+      chart.timeScale().setVisibleLogicalRange({ from: candles.length - 120, to: candles.length + 2 });
+      renderReadout();
+    } catch (e) {
+      if (seq !== loadSeq) return;
+      $('legend').textContent = '과거 데이터를 불러오지 못함. 네트워크를 확인하고 새로고침하세요. (' + e.message + ')';
+    }
+  }
+
+  function onKline(k) {
+    if (k.i !== tf || !candles.length) return;
+    const c = {
+      time: Math.floor(k.t / 1000) + TZ_SHIFT,
+      open: +k.o, high: +k.h, low: +k.l, close: +k.c, volume: +k.v,
+      closed: k.x,
+    };
+    const last = candles[candles.length - 1];
+    if (c.time === last.time) candles[candles.length - 1] = c;
+    else if (c.time > last.time) { last.closed = true; candles.push(c); }
+    else return;
+    candleSeries.update(c);
+    volumeSeries.update(volBar(c));
+    renderReadout();
+  }
+
+  function onTicker(t) {
+    const price = +t.c, pct = +t.P;
+    $('price').textContent = fmtPrice(price);
+    $('price').className = 'price ' + (pct >= 0 ? 'up' : 'down');
+    $('change').textContent = `24시간 ${fmtPct(pct)} (${pct >= 0 ? '+' : ''}${fmtPrice(+t.p)})`;
+    $('change').className = 'change ' + (pct >= 0 ? 'up' : 'down');
+    $('high24').textContent = fmtPrice(+t.h);
+    $('low24').textContent = fmtPrice(+t.l);
+    $('vol24').textContent = fmtBig(+t.q) + ' USDT';
+    document.title = `${fmtPrice(price)} · BTC/USDT`;
+  }
+
+  function setStatus(state, text) {
+    $('dot').className = 'dot ' + state;
+    $('statusText').textContent = text;
+  }
+
+  function connectWs() {
+    clearTimeout(reconnectTimer);
+    if (ws) { ws.onclose = null; ws.close(); }
+    const s = SYMBOL.toLowerCase();
+    const url = `${WS_HOSTS[wsHostIdx]}/stream?streams=${s}@kline_${tf}/${s}@ticker`;
+    const sock = new WebSocket(url);
+    ws = sock;
+    setStatus('wait', '연결 중…');
+    sock.onopen = () => { reconnectDelay = 1000; setStatus('live', '실시간 연결됨'); };
+    sock.onmessage = (ev) => {
+      const msg = JSON.parse(ev.data);
+      if (!msg.data) return;
+      if (msg.data.e === 'kline') onKline(msg.data.k);
+      else if (msg.data.e === '24hrTicker') onTicker(msg.data);
+    };
+    sock.onclose = () => {
+      if (ws !== sock) return;
+      setStatus('wait', '재연결 중…');
+      wsHostIdx = (wsHostIdx + 1) % WS_HOSTS.length;
+      reconnectTimer = setTimeout(connectWs, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+    };
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    // 휴대폰에서 화면을 껐다 켜면 끊긴 연결과 놓친 봉을 다시 받아옴
+    if (document.visibilityState === 'visible' && (!ws || ws.readyState !== WebSocket.OPEN)) load(tf);
+  });
+
+  // ---------- 해석 ----------
+  function describeCandle(c) {
+    const isUp = c.close >= c.open;
+    const range = c.high - c.low;
+    const body = Math.abs(c.close - c.open);
+    const upper = c.high - Math.max(c.open, c.close);
+    const lower = Math.min(c.open, c.close) - c.low;
+    const pct = (c.close - c.open) / c.open * 100;
+    const kind = isUp ? '양봉' : '음봉';
+
+    if (range === 0) return { headline: '변동 없음', cls: '', body: '이 봉 동안 가격이 움직이지 않았음.' };
+
+    const bodyRatio = body / range;
+    let headline, meaning;
+    if (bodyRatio < 0.1) {
+      headline = '도지형 (몸통이 거의 없음)';
+      meaning = '시가와 종가가 비슷함. 사려는 힘과 팔려는 힘이 팽팽했던 봉.';
+    } else if (lower >= body * 2 && upper <= body) {
+      headline = `아랫꼬리가 긴 ${kind}`;
+      meaning = '한때 크게 떨어졌지만 다시 사들이는 힘에 끌어올려진 모습.';
+    } else if (upper >= body * 2 && lower <= body) {
+      headline = `윗꼬리가 긴 ${kind}`;
+      meaning = '한때 크게 올랐지만 팔려는 힘에 밀려 내려온 모습.';
+    } else if (bodyRatio >= 0.7) {
+      headline = `꽉 찬 ${kind}`;
+      meaning = isUp ? '처음부터 끝까지 사는 힘이 우세했음.' : '처음부터 끝까지 파는 힘이 우세했음.';
+    } else {
+      headline = `보통 ${kind}`;
+      meaning = isUp ? '올랐지만 중간에 오르내림이 있었음.' : '내렸지만 중간에 오르내림이 있었음.';
+    }
+    return {
+      headline,
+      cls: isUp ? 'up' : 'down',
+      body: meaning,
+      why: `시가→종가 ${fmtPct(pct)} · 몸통이 전체 길이의 ${Math.round(bodyRatio * 100)}% · 윗꼬리 ${fmtNum(upper)} / 아랫꼬리 ${fmtNum(lower)}`,
+    };
+  }
+
+  function describeTrend(closed) {
+    if (closed.length < LOOKBACK) return null;
+    const win = closed.slice(-LOOKBACK);
+    const half = LOOKBACK / 2;
+    const a = win.slice(0, half), b = win.slice(half);
+    const hi = (arr) => Math.max(...arr.map((c) => c.high));
+    const lo = (arr) => Math.min(...arr.map((c) => c.low));
+    const higherHigh = hi(b) > hi(a), higherLow = lo(b) > lo(a);
+    const change = (win[win.length - 1].close - win[0].open) / win[0].open * 100;
+    const ups = win.filter((c) => c.close >= c.open).length;
+
+    let headline, cls, body;
+    if (higherHigh && higherLow) {
+      headline = '상승 흐름'; cls = 'up';
+      body = '뒤쪽 10봉의 고점과 저점이 앞쪽 10봉보다 모두 높아졌음.';
+    } else if (!higherHigh && !higherLow) {
+      headline = '하락 흐름'; cls = 'down';
+      body = '뒤쪽 10봉의 고점과 저점이 앞쪽 10봉보다 모두 낮아졌음.';
+    } else {
+      headline = '횡보 (방향 불분명)'; cls = '';
+      body = '고점과 저점이 서로 다른 방향으로 움직여 뚜렷한 추세가 없음.';
+    }
+    return {
+      headline, cls, body,
+      why: `최근 ${LOOKBACK}봉(${TF_LABEL[tf]}봉) 변동 ${fmtPct(change)} · 양봉 ${ups}개 / 음봉 ${LOOKBACK - ups}개 · 범위 ${fmtPrice(lo(win))} ~ ${fmtPrice(hi(win))}`,
+    };
+  }
+
+  function describeVolume(closed) {
+    if (closed.length < LOOKBACK + 1) return null;
+    const last = closed[closed.length - 1];
+    const prev = closed.slice(-LOOKBACK - 1, -1);
+    const avg = prev.reduce((s, c) => s + c.volume, 0) / prev.length;
+    const ratio = avg > 0 ? Math.round(last.volume / avg * 10) / 10 : 0; // 표시값과 판정 기준을 일치시킴
+    let headline, body;
+    if (ratio >= 2) { headline = `평소의 ${ratio.toFixed(1)}배 (급증)`; body = '많은 사람이 몰린 봉. 이 봉의 움직임은 의미가 큰 편.'; }
+    else if (ratio >= 1.3) { headline = `평소의 ${ratio.toFixed(1)}배 (많음)`; body = '평소보다 거래가 활발했음.'; }
+    else if (ratio >= 0.7) { headline = `평소 수준 (${ratio.toFixed(1)}배)`; body = '특별히 많지도 적지도 않음.'; }
+    else { headline = `평소의 ${ratio.toFixed(1)}배 (적음)`; body = '참여가 적어 이 봉의 움직임은 쉽게 되돌려질 수 있음.'; }
+    return {
+      headline, cls: '',
+      body,
+      why: `직전 확정 봉(${fmtTime(last.time, tf)}) 거래량 ${fmtNum(last.volume, 2)} BTC · 그 전 ${LOOKBACK}봉 평균 ${fmtNum(avg, 2)} BTC`,
+    };
+  }
+
+  function fillCard(id, d, emptyText) {
+    const el = $(id);
+    const h = el.querySelector('.headline');
+    if (!d) { h.textContent = emptyText; h.className = 'headline'; el.querySelector('.body').textContent = ''; el.querySelector('.why').textContent = ''; return; }
+    h.textContent = d.headline;
+    h.className = 'headline ' + (d.cls || '');
+    el.querySelector('.body').textContent = d.body;
+    el.querySelector('.why').textContent = d.why || '';
+  }
+
+  function renderReadout() {
+    if (!candles.length) return;
+    const c = (selectedTime != null && candles.find((x) => x.time === selectedTime)) || candles[candles.length - 1];
+    const isLatest = c === candles[candles.length - 1];
+    const tag = isLatest && !c.closed ? '진행 중' : '확정';
+
+    const chg = (c.close - c.open) / c.open * 100;
+    $('legend').innerHTML =
+      `<span>${fmtTime(c.time, tf)} · ${tag}</span>` +
+      `<span>시가 <b>${fmtPrice(c.open)}</b></span>` +
+      `<span>고가 <b>${fmtPrice(c.high)}</b></span>` +
+      `<span>저가 <b>${fmtPrice(c.low)}</b></span>` +
+      `<span>종가 <b class="${c.close >= c.open ? 'up' : 'down'}">${fmtPrice(c.close)}</b></span>` +
+      `<span class="${chg >= 0 ? 'up' : 'down'}">${fmtPct(chg)}</span>` +
+      `<span>거래량 <b>${fmtNum(c.volume, 3)}</b> BTC</span>`;
+
+    const cd = describeCandle(c);
+    const note = isLatest && !c.closed ? ' 아직 진행 중인 봉이라 모양이 계속 바뀜.' : '';
+    fillCard('cardCandle', { ...cd, body: cd.body + note }, '—');
+    $('cardCandle').querySelector('h3').textContent = `선택한 봉 · ${fmtTime(c.time, tf)} (${tag})`;
+
+    const closed = candles.filter((x) => x.closed);
+    fillCard('cardTrend', describeTrend(closed), '데이터 부족');
+    fillCard('cardVolume', describeVolume(closed), '데이터 부족');
+  }
+
+  // ---------- 시작 ----------
+  document.querySelectorAll('.tf').forEach((b) => b.addEventListener('click', () => { if (b.dataset.tf !== tf) load(b.dataset.tf); }));
+  load(tf);
+})();
+</script>
+</body>
+</html>
