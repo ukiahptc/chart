@@ -111,6 +111,34 @@
   .levels .gap { color: var(--muted); font-size: 12px; }
   .hint { font-size: 12px; color: var(--muted); margin: 6px 2px 0; }
 
+  /* 진입 연습: 진입·청산 시각을 차트 위에 세로선으로 표시 */
+  .chart-area { position: relative; }
+  .vlines { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 3; }
+  .vline { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed currentColor; }
+  .vline.long { color: var(--up); }
+  .vline.short { color: var(--down); }
+  .vline.exit { color: var(--muted); }
+  .vline span {
+    position: absolute; top: 4px; left: 3px; white-space: nowrap; font-size: 11px; line-height: 16px;
+    padding: 0 4px; border: 1px solid currentColor; border-radius: 4px; background: var(--panel);
+    font-variant-numeric: tabular-nums;
+  }
+  .vline.exit span { top: 24px; }
+  .vline.flip span { left: auto; right: 3px; }
+  .pr-btns { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 8px; }
+  .pr-btn { border: 0; border-radius: 6px; padding: 7px 16px; font: inherit; font-weight: 700; color: #fff; cursor: pointer; }
+  .pr-btn.long { background: var(--up); }
+  .pr-btn.short { background: var(--down); }
+  .pr-btn.close { background: var(--text); color: var(--panel); }
+  .pr-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .pr-warn { font-size: 13px; color: var(--signal); margin: 4px 0; }
+  .pr-sum { font-size: 14px; margin: 6px 0; font-variant-numeric: tabular-nums; }
+  .table-scroll { overflow-x: auto; }
+  .pr-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pr-table th, .pr-table td { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px dashed var(--line); }
+  .pr-table th { color: var(--muted); font-weight: 600; }
+  .pr-table td.num { text-align: right; }
+
   h2 { font-size: 17px; margin: 28px 0 10px; }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
@@ -187,7 +215,7 @@
 
   <div class="chart-box">
     <div class="legend" id="legend">데이터 불러오는 중…</div>
-    <div id="chart"></div>
+    <div class="chart-area"><div id="chart"></div><div class="vlines" id="vlines"></div></div>
     <div class="sub" id="rsiBox">
       <div class="sub-legend" id="rsiLegend">RSI(14)</div>
       <div class="subchart" id="rsiChart"></div>
@@ -198,6 +226,39 @@
     </div>
   </div>
   <p class="hint">PC: 마우스를 올리면 그 봉의 정보가 보임 · 휠로 확대/축소, 드래그로 이동<br>휴대폰: 봉을 길게 누르면 정보가 보임 · 두 손가락으로 확대/축소</p>
+
+  <h2>진입 연습</h2>
+  <div class="card" id="practice">
+    <p class="why" style="margin-top:0">실제 돈 없이 지금 가격(시장가)으로 진입해 보는 연습. 진입·청산하면 그 시각이 차트에 세로선으로 찍힘. 기록은 이 기기에만 저장됨.</p>
+    <div class="pos-form">
+      <label>증거금 (USDT)
+        <input id="prMargin" type="number" inputmode="decimal" step="1" min="0" placeholder="예: 100">
+      </label>
+      <label>레버리지
+        <input id="prLev" type="number" inputmode="decimal" step="1" min="1" placeholder="예: 10">
+      </label>
+      <label>손절가
+        <input id="prStop" type="number" inputmode="decimal" step="0.1" min="0" placeholder="예: 84000">
+      </label>
+      <label>익절가 (선택)
+        <input id="prTp" type="number" inputmode="decimal" step="0.1" min="0" placeholder="예: 85000">
+      </label>
+    </div>
+    <div class="pr-btns">
+      <button class="pr-btn long" id="prLong" type="button">롱 진입</button>
+      <button class="pr-btn short" id="prShort" type="button">숏 진입</button>
+      <button class="pr-btn close" id="prClose" type="button">지금 청산</button>
+    </div>
+    <div id="prLive"></div>
+    <h3 style="font-size:14px;margin:16px 0 4px;color:var(--muted)">연습 기록</h3>
+    <div id="prHistory"></div>
+    <div class="pos-form" style="margin-top:10px">
+      <label>시작 잔고 (USDT)
+        <input id="prStart" type="number" inputmode="decimal" step="1" min="1">
+      </label>
+      <button class="tf" id="prReset" type="button">기록·잔고 초기화</button>
+    </div>
+  </div>
 
   <h2>내 포지션</h2>
   <div class="card">
@@ -561,6 +622,7 @@
     buyVolSeries.setData(candles.map(buyBar));
     refreshIndicators(true);
     renderPosition();
+    drawPractice();
   }
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 
@@ -712,12 +774,16 @@
       const rows = await fetchJson(`/fapi/v1/klines?symbol=${SYMBOL}&interval=${tf}&limit=500`);
       if (seq !== loadSeq) return;
       candles = rows.map(toCandle);
+      candleSeries.setMarkers([]);
       candleSeries.setData(candles);
       volumeSeries.setData(candles.map(volBar));
       buyVolSeries.setData(candles.map(buyBar));
       refreshIndicators(true);
       // 처음엔 최근 120봉만 보여 줌 (나머지는 드래그로 확인)
       chart.timeScale().setVisibleLogicalRange({ from: candles.length - 120, to: candles.length + 2 });
+      replayPractice();
+      drawPractice();
+      renderPrLive();
       renderReadout();
       poll(); // 실시간 데이터가 오기 전에 상단 시세부터 채움
     } catch (e) {
@@ -741,6 +807,8 @@
     volumeSeries.update(volBar(c));
     buyVolSeries.update(buyBar(c));
     refreshIndicators(false);
+    checkPractice(c, true);
+    renderPrLive();
     renderReadout();
   }
 
@@ -1119,6 +1187,259 @@
     }
     updatePositionStats();
   }
+
+  // ---------- 진입 연습 ----------
+  const FEE = 0.0005;      // 시장가 수수료 (한쪽, Batonex 테이커 기준)
+  const MMR = 0.004;       // 유지증거금률 (추정)
+  const SHOW_TRADES = 5;   // 차트에 세로선을 그릴 최근 거래 수
+  const REASON = { manual: '수동 청산', stop: '손절', tp: '익절', liq: '강제청산' };
+  const pr = store.get('chart.practice', null) || { start: 1000, balance: 1000, margin: 100, lev: 10, open: null, trades: [] };
+  const savePr = () => store.set('chart.practice', pr);
+  const sideKo = (s) => (s === 'long' ? '롱' : '숏');
+  const fmtSigned = (v) => (v >= 0 ? '+' : '−') + fmtNum(Math.abs(v), 2);
+  const fmtClock = (ms) => {
+    const d = new Date(ms);
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+  const numOrNull = (id) => { const v = parseFloat($(id).value); return v > 0 ? v : null; };
+  const nowPrice = () => (candles.length ? candles[candles.length - 1].close : null);
+  // 실제 시각(ms)이 속한 봉의 차트 시간
+  const toBarTime = (ms) => {
+    const t = Math.floor(ms / 1000) + TZ_SHIFT;
+    if (!candles.length || t < candles[0].time) return null;
+    let lo = 0, hi = candles.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (candles[mid].time <= t) lo = mid; else hi = mid - 1; }
+    return candles[lo].time;
+  };
+  // 수수료(진입·청산 각 0.05%)를 뺀 손익
+  const netPnl = (o, exit) => (exit - o.entry) * o.size * (o.side === 'long' ? 1 : -1) - o.notional * FEE - exit * o.size * FEE;
+
+  $('prMargin').value = pr.margin;
+  $('prLev').value = pr.lev;
+  $('prStart').value = pr.start;
+  if (pr.open) { $('prStop').value = pr.open.stop || ''; $('prTp').value = pr.open.tp || ''; }
+
+  function plan(side, price) {
+    const margin = numOrNull('prMargin'), lev = numOrNull('prLev'), stop = numOrNull('prStop'), tp = numOrNull('prTp');
+    if (!price) return { err: '가격 데이터를 기다리는 중.' };
+    if (!margin || !lev) return { err: '증거금과 레버리지를 입력하세요.' };
+    if (margin > pr.balance) return { err: `증거금이 연습 잔고(${fmtNum(pr.balance)} USDT)보다 큼.` };
+    const dir = side === 'long' ? 1 : -1;
+    const notional = margin * lev, size = notional / price;
+    // 교차 마진: 잔고 전체가 버팀목. 잔고 − 수수료 − 유지증거금만큼 잃으면 청산
+    const room = pr.balance - notional * FEE - notional * MMR;
+    if (room <= 0) return { err: '잔고에 비해 포지션이 너무 커서 진입하자마자 청산됨.' };
+    const p = { side, entry: price, margin, lev, notional, size, liq: price - dir * room / size, stop, tp };
+    if (stop && (stop - price) * dir >= 0) return { err: `${sideKo(side)} 손절가는 현재가보다 ${dir > 0 ? '낮아야' : '높아야'} 함.` };
+    if (tp && (tp - price) * dir <= 0) return { err: `${sideKo(side)} 익절가는 현재가보다 ${dir > 0 ? '높아야' : '낮아야'} 함.` };
+    if (stop && (stop - p.liq) * dir <= 0) return { err: `손절가가 예상 청산가(${fmtPrice(p.liq)})보다 멀어서 손절 전에 청산됨.` };
+    return p;
+  }
+
+  function openTrade(side) {
+    const p = plan(side, nowPrice());
+    if (p.err) return;
+    pr.margin = p.margin; pr.lev = p.lev;
+    pr.open = { ...p, entryTs: Date.now(), balanceAt: pr.balance };
+    savePr();
+    renderPrLive(); renderPrHistory(); drawPractice();
+  }
+
+  function closeTrade(exit, reason, ts) {
+    const o = pr.open;
+    if (!o) return;
+    // 교차 마진 강제청산은 계좌 잔고를 사실상 전부 잃는 것으로 단순화
+    const pnl = reason === 'liq' ? -o.balanceAt : netPnl(o, exit);
+    pr.balance = Math.max(0, pr.balance + pnl);
+    pr.trades.push({ ...o, exitTs: ts || Date.now(), exit, reason, pnl });
+    pr.open = null;
+    savePr();
+    $('prStop').value = ''; $('prTp').value = '';
+    renderPrLive(); renderPrHistory(); drawPractice();
+  }
+
+  // 봉 하나를 보고 손절·익절·청산 가격에 닿았는지 확인. 한 봉에서 둘 다 닿으면 불리한 쪽(손절)으로 처리
+  function checkPractice(c, live) {
+    const o = pr.open;
+    if (!o) return;
+    // 진입 뒤에 시작한 봉만 고가·저가를 쓰고, 진입한 봉은 종가(현재가)만 봄
+    const after = c.time > Math.floor(o.entryTs / 1000) + TZ_SHIFT;
+    const lo = after ? c.low : c.close, hi = after ? c.high : c.close;
+    let hit = null;
+    if (o.side === 'long') {
+      if (o.stop && lo <= o.stop) hit = ['stop', o.stop];
+      else if (lo <= o.liq) hit = ['liq', o.liq];
+      else if (o.tp && hi >= o.tp) hit = ['tp', o.tp];
+    } else {
+      if (o.stop && hi >= o.stop) hit = ['stop', o.stop];
+      else if (hi >= o.liq) hit = ['liq', o.liq];
+      else if (o.tp && lo <= o.tp) hit = ['tp', o.tp];
+    }
+    if (hit) closeTrade(hit[1], hit[0], live ? Date.now() : Math.max(o.entryTs, (c.time - TZ_SHIFT) * 1000));
+  }
+
+  // 페이지를 닫아 둔 사이 지나간 봉으로 손절·익절·청산 여부를 다시 확인
+  function replayPractice() {
+    if (!pr.open) return;
+    const from = toBarTime(pr.open.entryTs) ?? -Infinity;
+    for (const c of candles) {
+      if (!pr.open) break;
+      if (c.time >= from) checkPractice(c, false);
+    }
+  }
+
+  function renderPrLive() {
+    const price = nowPrice();
+    const o = pr.open;
+    $('prClose').hidden = !o;
+    $('prLong').hidden = $('prShort').hidden = !!o;
+    if (o) { renderOpen(o, price); return; }
+
+    const pl = plan('long', price), ps = plan('short', price);
+    $('prLong').disabled = !!pl.err;
+    $('prShort').disabled = !!ps.err;
+    if (pl.err && ps.err && pl.err === ps.err) { $('prLive').innerHTML = `<p class="pr-warn">${pl.err}</p>`; return; }
+    const base = pl.err ? ps : pl;
+    const realLev = base.notional / pr.balance;
+    const sideLine = (p, side) => {
+      if (p.err) return `<li><span>${sideKo(side)}</span><span class="gap">${p.err}</span></li>`;
+      const liqGap = (p.liq - price) / price * 100;
+      let t = Math.abs(liqGap) > 50 ? '청산 위험 사실상 없음' : `청산 약 ${fmtPrice(p.liq)} (${fmtPct(liqGap)})`;
+      if (p.stop) { const l = netPnl(p, p.stop); t += ` · 손절 시 <b class="down">${fmtSigned(l)}</b> (잔고의 ${fmtPct(l / pr.balance * 100)})`; }
+      if (p.tp) { const g = netPnl(p, p.tp); t += ` · 익절 시 <b class="up">${fmtSigned(g)}</b>`; }
+      if (p.stop && p.tp) t += ` · 손익비 1 : ${(netPnl(p, p.tp) / -netPnl(p, p.stop)).toFixed(2)}`;
+      return `<li><span>${sideKo(side)}으로 진입하면</span><span>${t}</span></li>`;
+    };
+    const stop = numOrNull('prStop');
+    // 손절가가 있으면 그 손절가가 맞는 방향만 보여 줌
+    const sides = stop ? [stop < price ? ['long', pl] : ['short', ps]] : [['long', pl], ['short', ps]];
+    const warns = [];
+    if (!stop) warns.push('손절가가 없으면 예측이 틀렸을 때 청산가까지 손실이 계속 커짐.');
+    if (realLev > 10) warns.push(`실질 레버리지 ${realLev.toFixed(1)}배: 가격이 약 ${(100 / realLev).toFixed(1)}%만 반대로 가도 청산 위험.`);
+    sides.forEach(([, p]) => { if (!p.err && p.stop && -netPnl(p, p.stop) > pr.balance * 0.05) warns.push('손절 시 손실이 잔고의 5%를 넘음. 증거금이나 레버리지를 줄여 볼 것.'); });
+    $('prLive').innerHTML =
+      `<p class="pr-sum">현재가 <b>${fmtPrice(price)}</b> · 포지션 ${fmtNum(base.size, 4)} BTC (약 ${fmtNum(base.notional, 0)} USDT) · ` +
+      `실질 레버리지 <b>${realLev.toFixed(1)}배</b> <span class="gap" style="color:var(--muted);font-size:12px">(포지션 ÷ 잔고 ${fmtNum(pr.balance)} USDT)</span></p>` +
+      `<ul class="levels">${sides.map(([s, p]) => sideLine(p, s)).join('')}</ul>` +
+      warns.map((w) => `<p class="pr-warn">⚠ ${w}</p>`).join('');
+  }
+
+  function renderOpen(o, price) {
+    const dir = o.side === 'long' ? 1 : -1;
+    const pnl = netPnl(o, price);
+    const be = o.entry * (1 + dir * FEE) / (1 - dir * FEE); // 진입·청산 수수료를 모두 메우는 가격
+    const cls = pnl >= 0 ? 'up' : 'down';
+    const levels = [
+      { label: '현재가', v: price, cls: 'now' },
+      { label: `진입가 (${sideKo(o.side)})`, v: o.entry, cls: 'entry' },
+      { label: '실제 본전 (수수료 포함)', v: be },
+      { label: '손절가', v: o.stop }, { label: '익절가', v: o.tp },
+      { label: '강제청산가 (추정)', v: Math.abs(o.liq - price) / price > 0.5 ? null : o.liq },
+    ];
+    const rows = levels.filter((l) => l.v).sort((a, b) => b.v - a.v).map((l) => {
+      const gap = l.cls === 'now' ? '' : `<span class="gap">현재가 대비 ${fmtPct((l.v - price) / price * 100)}</span>`;
+      return `<li class="${l.cls || ''}"><span>${l.label}</span><span>${fmtPrice(l.v)} ${gap}</span></li>`;
+    }).join('');
+    $('prLive').innerHTML =
+      `<div class="headline" style="font-size:17px;font-weight:700"><span class="${cls}">${sideKo(o.side)} 진입 중 · ${fmtSigned(pnl)} USDT (증거금 대비 ${fmtPct(pnl / o.margin * 100)})</span></div>` +
+      `<p>${fmtClock(o.entryTs)} 진입 · ${fmtNum(o.size, 4)} BTC × ${fmtNum(o.lev, 0)}배 · 증거금 ${fmtNum(o.margin)} USDT</p>` +
+      `<ul class="levels">${rows}</ul>` +
+      (o.stop ? '' : '<p class="pr-warn">⚠ 손절가가 없음. 위 입력칸에 손절가를 넣으면 바로 적용됨.</p>') +
+      `<p class="why">손익은 수수료 포함, 펀딩비 제외. 페이지가 열려 있는 동안 손절·익절·청산 가격에 닿으면 자동으로 청산되고, 닫아 둔 사이 닿았다면 다음에 열 때 봉 데이터로 확인해 처리함.</p>`;
+  }
+
+  function renderPrHistory() {
+    const ts = pr.trades;
+    const sum = ts.reduce((a, t) => a + t.pnl, 0);
+    const wins = ts.filter((t) => t.pnl > 0).length;
+    const head = `<p class="pr-sum">잔고 <b>${fmtNum(pr.balance)} USDT</b> (시작 ${fmtNum(pr.start)}) · 거래 ${ts.length}회` +
+      (ts.length ? ` · 승 ${wins} / 패 ${ts.length - wins} (승률 ${(wins / ts.length * 100).toFixed(0)}%) · 누적 <b class="${sum >= 0 ? 'up' : 'down'}">${fmtSigned(sum)} USDT</b>` : '') + '</p>';
+    if (!ts.length) { $('prHistory').innerHTML = head + '<p class="why">아직 연습 거래가 없음.</p>'; return; }
+    const rows = ts.slice(-30).reverse().map((t) =>
+      `<tr><td class="${t.side === 'long' ? 'up' : 'down'}">${sideKo(t.side)} ${fmtNum(t.lev, 0)}배</td>` +
+      `<td>${fmtClock(t.entryTs)} · ${fmtPrice(t.entry)}</td><td>${fmtClock(t.exitTs)} · ${fmtPrice(t.exit)}</td>` +
+      `<td>${REASON[t.reason]}</td><td class="num ${t.pnl >= 0 ? 'up' : 'down'}">${fmtSigned(t.pnl)}</td></tr>`).join('');
+    $('prHistory').innerHTML = head +
+      `<div class="table-scroll"><table class="pr-table"><thead><tr><th>방향</th><th>진입</th><th>청산</th><th>결과</th><th class="num">손익 (USDT)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  // ---------- 진입 연습: 차트 표시 ----------
+  let prLines = [];
+  function prEvents() {
+    const ev = [];
+    pr.trades.slice(-SHOW_TRADES).forEach((t) => {
+      ev.push({ ts: t.entryTs, kind: 'entry', side: t.side, text: `${sideKo(t.side)} 진입 ${fmtClock(t.entryTs)}` });
+      ev.push({ ts: t.exitTs, kind: 'exit', side: t.side, pnl: t.pnl, text: `${REASON[t.reason]} ${fmtClock(t.exitTs)} · ${fmtSigned(t.pnl)}` });
+    });
+    if (pr.open) ev.push({ ts: pr.open.entryTs, kind: 'entry', side: pr.open.side, text: `${sideKo(pr.open.side)} 진입 ${fmtClock(pr.open.entryTs)} · ${fmtPrice(pr.open.entry)}` });
+    return ev;
+  }
+
+  function drawPractice() {
+    prLines.forEach((l) => candleSeries.removePriceLine(l));
+    prLines = [];
+    const o = pr.open;
+    if (o) {
+      const add = (price, color, title, style) => price && prLines.push(candleSeries.createPriceLine({
+        price, color: cssVar(color), lineWidth: 1, lineStyle: style, axisLabelVisible: true, title,
+      }));
+      const S = LightweightCharts.LineStyle;
+      add(o.entry, o.side === 'long' ? '--up' : '--down', `연습 ${sideKo(o.side)}`, S.Solid);
+      add(o.stop, '--signal', '손절', S.Dashed);
+      add(o.tp, '--ma30', '익절', S.Dashed);
+      if (Math.abs(o.liq - o.entry) / o.entry < 0.5) add(o.liq, '--bb', '청산(추정)', S.Dotted);
+    }
+    const events = prEvents();
+    const marks = [];
+    events.forEach((e) => {
+      const time = toBarTime(e.ts);
+      if (time == null) return;
+      const long = e.side === 'long';
+      marks.push(e.kind === 'entry'
+        ? { time, position: long ? 'belowBar' : 'aboveBar', color: cssVar(long ? '--up' : '--down'), shape: long ? 'arrowUp' : 'arrowDown', text: sideKo(e.side) }
+        : { time, position: long ? 'aboveBar' : 'belowBar', color: cssVar('--muted'), shape: 'circle', text: fmtSigned(e.pnl) });
+    });
+    candleSeries.setMarkers(marks.sort((a, b) => a.time - b.time));
+    $('vlines').innerHTML = events.map((e) =>
+      `<div class="vline ${e.kind === 'exit' ? 'exit' : e.side}" data-ts="${e.ts}"><span>${e.text}</span></div>`).join('');
+    positionVlines();
+  }
+
+  function positionVlines() {
+    const ts = chart.timeScale(), w = ts.width();
+    $('vlines').querySelectorAll('.vline').forEach((el) => {
+      const time = toBarTime(+el.dataset.ts);
+      const x = time == null ? null : ts.timeToCoordinate(time);
+      el.hidden = x == null || x < 0 || x > w;
+      if (el.hidden) return;
+      el.style.left = Math.round(x) + 'px';
+      el.classList.toggle('flip', x > w - 170);
+    });
+  }
+  let vlineFrame = 0;
+  const queueVlines = () => { cancelAnimationFrame(vlineFrame); vlineFrame = requestAnimationFrame(positionVlines); };
+  chart.timeScale().subscribeVisibleLogicalRangeChange(queueVlines);
+  new ResizeObserver(queueVlines).observe($('chart'));
+
+  $('prLong').addEventListener('click', () => openTrade('long'));
+  $('prShort').addEventListener('click', () => openTrade('short'));
+  $('prClose').addEventListener('click', () => { if (nowPrice()) closeTrade(nowPrice(), 'manual'); });
+  ['prMargin', 'prLev'].forEach((id) => $(id).addEventListener('input', renderPrLive));
+  ['prStop', 'prTp'].forEach((id) => $(id).addEventListener('input', () => {
+    // 진입 중에는 손절·익절 입력이 바로 열린 포지션에 적용됨
+    if (pr.open) { pr.open.stop = numOrNull('prStop'); pr.open.tp = numOrNull('prTp'); savePr(); drawPractice(); }
+    renderPrLive();
+  }));
+  $('prReset').addEventListener('click', () => {
+    if (!confirm('연습 기록과 잔고를 모두 지우고 처음부터 시작할까요?')) return;
+    pr.start = numOrNull('prStart') || 1000;
+    pr.balance = pr.start; pr.trades = []; pr.open = null;
+    savePr();
+    $('prStop').value = ''; $('prTp').value = '';
+    renderPrLive(); renderPrHistory(); drawPractice();
+  });
+  renderPrHistory();
 
   // ---------- 시작 ----------
   document.querySelectorAll('[data-tf]').forEach((b) => b.addEventListener('click', () => { if (b.dataset.tf !== tf) load(b.dataset.tf); }));
