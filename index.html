@@ -1327,13 +1327,11 @@
 
   function renderOpen(o, price) {
     const dir = o.side === 'long' ? 1 : -1;
-    const pnl = netPnl(o, price);
-    const be = o.entry * (1 + dir * FEE) / (1 - dir * FEE); // 진입·청산 수수료를 모두 메우는 가격
-    const cls = pnl >= 0 ? 'up' : 'down';
+    const pct = (price - o.entry) / o.entry * 100 * dir; // 가격 기준 수익률 (수수료 제외)
+    const cls = pct >= 0 ? 'up' : 'down';
     const levels = [
       { label: '현재가', v: price, cls: 'now' },
       { label: `진입가 (${sideKo(o.side)})`, v: o.entry, cls: 'entry' },
-      { label: '실제 본전 (수수료 포함)', v: be },
       { label: '손절가', v: o.stop }, { label: '익절가', v: o.tp },
       { label: '강제청산가 (추정)', v: Math.abs(o.liq - price) / price > 0.5 ? null : o.liq },
     ];
@@ -1342,11 +1340,12 @@
       return `<li class="${l.cls || ''}"><span>${l.label}</span><span>${fmtPrice(l.v)} ${gap}</span></li>`;
     }).join('');
     $('prLive').innerHTML =
-      `<div class="headline" style="font-size:17px;font-weight:700"><span class="${cls}">${sideKo(o.side)} 진입 중 · ${fmtSigned(pnl)} USDT (증거금 대비 ${fmtPct(pnl / o.margin * 100)})</span></div>` +
+      `<div class="headline" style="font-size:17px;font-weight:700"><span class="${cls}">${sideKo(o.side)} ${fmtPct(pct)} · ${pct >= 0 ? '수익' : '손실'} 구간</span>` +
+      ` <span class="${cls}" style="font-size:14px">(레버리지 ${fmtNum(o.lev, 0)}배 기준 ${fmtPct(pct * o.lev)})</span></div>` +
       `<p>${fmtClock(o.entryTs)} 진입 · ${fmtNum(o.size, 4)} BTC × ${fmtNum(o.lev, 0)}배 · 증거금 ${fmtNum(o.margin)} USDT</p>` +
       `<ul class="levels">${rows}</ul>` +
       (o.stop ? '' : '<p class="pr-warn">⚠ 손절가가 없음. 위 입력칸에 손절가를 넣으면 바로 적용됨.</p>') +
-      `<p class="why">손익은 수수료 포함, 펀딩비 제외. 페이지가 열려 있는 동안 손절·익절·청산 가격에 닿으면 자동으로 청산되고, 닫아 둔 사이 닿았다면 다음에 열 때 봉 데이터로 확인해 처리함.</p>`;
+      `<p class="why">진입 중 수익률은 수수료·펀딩비를 반영하지 않은 가격 기준이고, 아래 연습 기록의 손익은 수수료(진입·청산 각 0.05%)를 반영한 금액임. 페이지가 열려 있는 동안 손절·익절·청산 가격에 닿으면 자동으로 청산되고, 닫아 둔 사이 닿았다면 다음에 열 때 봉 데이터로 확인해 처리함.</p>`;
   }
 
   function renderPrHistory() {
