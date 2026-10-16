@@ -230,19 +230,14 @@
   <h2>진입 연습</h2>
   <div class="card" id="practice">
     <p class="why" style="margin-top:0">실제 돈 없이 지금 가격(시장가)으로 진입해 보는 연습. 진입·청산하면 그 시각이 차트에 세로선으로 찍힘. 기록은 이 기기에만 저장됨.</p>
-    <div class="pos-form">
-      <label>증거금 (USDT)
-        <input id="prMargin" type="number" inputmode="decimal" step="1" min="0" placeholder="예: 100">
-      </label>
-      <label>레버리지
-        <input id="prLev" type="number" inputmode="decimal" step="1" min="1" placeholder="예: 10">
-      </label>
-      <label>손절가
-        <input id="prStop" type="number" inputmode="decimal" step="0.1" min="0" placeholder="예: 84000">
-      </label>
-      <label>익절가 (선택)
-        <input id="prTp" type="number" inputmode="decimal" step="0.1" min="0" placeholder="예: 85000">
-      </label>
+    <div class="toolbar" role="group" aria-label="증거금 비율">
+      <span class="label">증거금 (잔고의)</span>
+      <button class="tf pr-pct" data-pct="5" type="button">5%</button>
+      <button class="tf pr-pct" data-pct="10" type="button">10%</button>
+      <button class="tf pr-pct" data-pct="25" type="button">25%</button>
+      <button class="tf pr-pct" data-pct="50" type="button">50%</button>
+      <button class="tf pr-pct" data-pct="100" type="button">100%</button>
+      <span class="tf-note">레버리지 40배 고정</span>
     </div>
     <div class="pr-btns">
       <button class="pr-btn long" id="prLong" type="button">롱 진입</button>
@@ -1192,6 +1187,7 @@
   const FEE = 0.0005;      // 시장가 수수료 (한쪽, Batonex 테이커 기준)
   const MMR = 0.004;       // 유지증거금률 (추정)
   const SHOW_TRADES = 5;   // 차트에 세로선을 그릴 최근 거래 수
+  const PR_LEV = 40;       // 연습 레버리지 고정
   const REASON = { manual: '수동 청산', stop: '손절', tp: '익절', liq: '강제청산' };
   const pr = store.get('chart.practice', null) || { start: 1000, balance: 1000, margin: 100, lev: 10, open: null, trades: [] };
   const savePr = () => store.set('chart.practice', pr);
@@ -1215,16 +1211,13 @@
   // 수수료(진입·청산 각 0.05%)를 뺀 손익
   const netPnl = (o, exit) => (exit - o.entry) * o.size * (o.side === 'long' ? 1 : -1) - o.notional * FEE - exit * o.size * FEE;
 
-  $('prMargin').value = pr.margin;
-  $('prLev').value = pr.lev;
+  if (!pr.pct) pr.pct = 10;
   $('prStart').value = pr.start;
-  if (pr.open) { $('prStop').value = pr.open.stop || ''; $('prTp').value = pr.open.tp || ''; }
 
   function plan(side, price) {
-    const margin = numOrNull('prMargin'), lev = numOrNull('prLev'), stop = numOrNull('prStop'), tp = numOrNull('prTp');
+    const margin = pr.balance * pr.pct / 100, lev = PR_LEV, stop = null, tp = null;
     if (!price) return { err: '가격 데이터를 기다리는 중.' };
-    if (!margin || !lev) return { err: '증거금과 레버리지를 입력하세요.' };
-    if (margin > pr.balance) return { err: `증거금이 연습 잔고(${fmtNum(pr.balance)} USDT)보다 큼.` };
+    if (!(margin > 0)) return { err: '연습 잔고가 0임. 아래에서 기록·잔고를 초기화하세요.' };
     const dir = side === 'long' ? 1 : -1;
     const notional = margin * lev, size = notional / price;
     // 교차 마진: 잔고 전체가 버팀목. 잔고 − 수수료 − 유지증거금만큼 잃으면 청산
@@ -1240,7 +1233,6 @@
   function openTrade(side) {
     const p = plan(side, nowPrice());
     if (p.err) return;
-    pr.margin = p.margin; pr.lev = p.lev;
     pr.open = { ...p, entryTs: Date.now(), balanceAt: pr.balance };
     savePr();
     renderPrLive(); renderPrHistory(); drawPractice();
@@ -1255,7 +1247,6 @@
     pr.trades.push({ ...o, exitTs: ts || Date.now(), exit, reason, pnl });
     pr.open = null;
     savePr();
-    $('prStop').value = ''; $('prTp').value = '';
     renderPrLive(); renderPrHistory(); drawPractice();
   }
 
@@ -1306,20 +1297,13 @@
       if (p.err) return `<li><span>${sideKo(side)}</span><span class="gap">${p.err}</span></li>`;
       const liqGap = (p.liq - price) / price * 100;
       let t = Math.abs(liqGap) > 50 ? '청산 위험 사실상 없음' : `청산 약 ${fmtPrice(p.liq)} (${fmtPct(liqGap)})`;
-      if (p.stop) { const l = netPnl(p, p.stop); t += ` · 손절 시 <b class="down">${fmtSigned(l)}</b> (잔고의 ${fmtPct(l / pr.balance * 100)})`; }
-      if (p.tp) { const g = netPnl(p, p.tp); t += ` · 익절 시 <b class="up">${fmtSigned(g)}</b>`; }
-      if (p.stop && p.tp) t += ` · 손익비 1 : ${(netPnl(p, p.tp) / -netPnl(p, p.stop)).toFixed(2)}`;
       return `<li><span>${sideKo(side)}으로 진입하면</span><span>${t}</span></li>`;
     };
-    const stop = numOrNull('prStop');
-    // 손절가가 있으면 그 손절가가 맞는 방향만 보여 줌
-    const sides = stop ? [stop < price ? ['long', pl] : ['short', ps]] : [['long', pl], ['short', ps]];
+    const sides = [['long', pl], ['short', ps]];
     const warns = [];
-    if (!stop) warns.push('손절가가 없으면 예측이 틀렸을 때 청산가까지 손실이 계속 커짐.');
     if (realLev > 10) warns.push(`실질 레버리지 ${realLev.toFixed(1)}배: 가격이 약 ${(100 / realLev).toFixed(1)}%만 반대로 가도 청산 위험.`);
-    sides.forEach(([, p]) => { if (!p.err && p.stop && -netPnl(p, p.stop) > pr.balance * 0.05) warns.push('손절 시 손실이 잔고의 5%를 넘음. 증거금이나 레버리지를 줄여 볼 것.'); });
     $('prLive').innerHTML =
-      `<p class="pr-sum">현재가 <b>${fmtPrice(price)}</b> · 포지션 ${fmtNum(base.size, 4)} BTC (약 ${fmtNum(base.notional, 0)} USDT) · ` +
+      `<p class="pr-sum">현재가 <b>${fmtPrice(price)}</b> · 증거금 ${fmtNum(base.margin)} USDT × ${PR_LEV}배 = 포지션 ${fmtNum(base.size, 4)} BTC (약 ${fmtNum(base.notional, 0)} USDT) · ` +
       `실질 레버리지 <b>${realLev.toFixed(1)}배</b> <span class="gap" style="color:var(--muted);font-size:12px">(포지션 ÷ 잔고 ${fmtNum(pr.balance)} USDT)</span></p>` +
       `<ul class="levels">${sides.map(([s, p]) => sideLine(p, s)).join('')}</ul>` +
       warns.map((w) => `<p class="pr-warn">⚠ ${w}</p>`).join('');
@@ -1344,8 +1328,7 @@
       ` <span class="${cls}" style="font-size:14px">(레버리지 ${fmtNum(o.lev, 0)}배 기준 ${fmtPct(pct * o.lev)})</span></div>` +
       `<p>${fmtClock(o.entryTs)} 진입 · ${fmtNum(o.size, 4)} BTC × ${fmtNum(o.lev, 0)}배 · 증거금 ${fmtNum(o.margin)} USDT</p>` +
       `<ul class="levels">${rows}</ul>` +
-      (o.stop ? '' : '<p class="pr-warn">⚠ 손절가가 없음. 위 입력칸에 손절가를 넣으면 바로 적용됨.</p>') +
-      `<p class="why">진입 중 수익률은 수수료·펀딩비를 반영하지 않은 가격 기준이고, 아래 연습 기록의 손익은 수수료(진입·청산 각 0.05%)를 반영한 금액임. 페이지가 열려 있는 동안 손절·익절·청산 가격에 닿으면 자동으로 청산되고, 닫아 둔 사이 닿았다면 다음에 열 때 봉 데이터로 확인해 처리함.</p>`;
+      `<p class="why">진입 중 수익률은 수수료·펀딩비를 반영하지 않은 가격 기준이고, 아래 연습 기록의 손익은 수수료(진입·청산 각 0.05%)를 반영한 금액임. 페이지가 열려 있는 동안 청산가에 닿으면 자동으로 강제청산되고, 닫아 둔 사이 닿았다면 다음에 열 때 봉 데이터로 확인해 처리함.</p>`;
   }
 
   function renderPrHistory() {
@@ -1424,18 +1407,17 @@
   $('prLong').addEventListener('click', () => openTrade('long'));
   $('prShort').addEventListener('click', () => openTrade('short'));
   $('prClose').addEventListener('click', () => { if (nowPrice()) closeTrade(nowPrice(), 'manual'); });
-  ['prMargin', 'prLev'].forEach((id) => $(id).addEventListener('input', renderPrLive));
-  ['prStop', 'prTp'].forEach((id) => $(id).addEventListener('input', () => {
-    // 진입 중에는 손절·익절 입력이 바로 열린 포지션에 적용됨
-    if (pr.open) { pr.open.stop = numOrNull('prStop'); pr.open.tp = numOrNull('prTp'); savePr(); drawPractice(); }
-    renderPrLive();
+  const applyPct = () => document.querySelectorAll('.pr-pct').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.pct === pr.pct)));
+  document.querySelectorAll('.pr-pct').forEach((b) => b.addEventListener('click', () => {
+    pr.pct = +b.dataset.pct;
+    savePr(); applyPct(); renderPrLive();
   }));
+  applyPct();
   $('prReset').addEventListener('click', () => {
     if (!confirm('연습 기록과 잔고를 모두 지우고 처음부터 시작할까요?')) return;
     pr.start = numOrNull('prStart') || 1000;
     pr.balance = pr.start; pr.trades = []; pr.open = null;
     savePr();
-    $('prStop').value = ''; $('prTp').value = '';
     renderPrLive(); renderPrHistory(); drawPractice();
   });
   renderPrHistory();
